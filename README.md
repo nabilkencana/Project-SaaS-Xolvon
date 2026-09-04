@@ -46,9 +46,14 @@ $ npm run start:prod
 
 ## Run tests
 
+> **Important**: Karena NestJS 12 menggunakan modul ESM murni, jalankan unit test menggunakan `npm run test:esm` (bukan `npm test` biasa) agar Node.js VM modules aktif dengan benar.
+
 ```bash
-# unit tests
-$ npm run test
+# unit tests (wajib menggunakan test:esm untuk kompatibilitas ESM di NestJS 12)
+$ npm run test:esm
+
+# spesifik file test
+$ npm run test:esm -- src/database/d1.service.spec.ts
 
 # e2e tests
 $ npm run test:e2e
