@@ -30,6 +30,9 @@ async function bootstrap() {
   // Global exception filter — safe error responses, no stack trace leaks
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  await app.listen(configService.get<number>('PORT') ?? 3000);
+  // PORT is validated and coerced to a number by the ConfigModule validate()
+  // hook, so it is safe to read it directly here.
+  const port = configService.get<number>('PORT') ?? 3000;
+  await app.listen(port);
 }
 bootstrap();
