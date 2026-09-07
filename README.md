@@ -44,6 +44,19 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
+## Environment variables
+
+Salin `.env.example` ke `.env` lalu isi nilainya. Semua variabel berikut **wajib** dan divalidasi saat bootstrap — aplikasi menolak start (fail-fast) jika ada yang kosong/invalid, tanpa pernah mencetak nilai secret ke error atau log:
+
+| Variabel | Aturan |
+|---|---|
+| `CLOUDFLARE_ACCOUNT_ID` | Wajib, non-kosong |
+| `CLOUDFLARE_D1_DATABASE_ID` | Wajib, non-kosong |
+| `CLOUDFLARE_API_TOKEN` | Wajib, non-kosong. Hanya dipakai server-side sebagai header Bearer ke Cloudflare; tidak pernah disimpan sebagai field service yang bisa terserialisasi |
+| `JWT_SECRET` | Wajib, minimal 32 karakter |
+| `FRONTEND_URL` | Wajib, URL absolut `http(s)` yang valid (dipakai untuk CORS origin) |
+| `PORT` | Opsional, integer 1–65535 (default `3000`) |
+
 ## Run tests
 
 > **Important**: Karena NestJS 12 menggunakan modul ESM murni, jalankan unit test menggunakan `npm run test:esm` (bukan `npm test` biasa) agar Node.js VM modules aktif dengan benar.
@@ -61,6 +74,14 @@ $ npm run test:e2e
 # test coverage
 $ npm run test:cov
 ```
+
+### Testing tanpa credential Cloudflare
+
+Unit dan e2e test **tidak membutuhkan credential Cloudflare asli** dan tidak pernah mengontak internet:
+
+- Unit test mem-mock `fetch`/`ConfigService` per file.
+- E2e test meng-override `D1Service` dan `PasswordService` di testing module; nilai env test diset di `test/e2e-setup.ts` sebelum `AppModule` diimport, dan suatu assertion memastikan `fetch` global tidak pernah dipanggil selama suite berjalan.
+- Jangan pernah menaruh credential asli di file test atau fixture.
 
 ## Deployment
 
