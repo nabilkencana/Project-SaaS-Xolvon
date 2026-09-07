@@ -235,9 +235,7 @@ describe('D1Service', () => {
       expect(() => service.onModuleInit()).toThrow(
         /CLOUDFLARE_ACCOUNT_ID/,
       );
-    });
-
-    it('should throw if CLOUDFLARE_D1_DATABASE_ID is missing', () => {
+    });    it('should throw if CLOUDFLARE_D1_DATABASE_ID is missing', () => {
       const service = createService({ CLOUDFLARE_D1_DATABASE_ID: '' });
 
       expect(() => service.onModuleInit()).toThrow(
@@ -268,6 +266,59 @@ describe('D1Service', () => {
       const service = createService();
 
       expect(() => service.onModuleInit()).not.toThrow();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Secret-handling boundary: token must not be retained as service state
+  // -----------------------------------------------------------------------
+  describe('secret handling boundary', () => {
+    it('sends the configured bearer token in the Authorization header', async () => {
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => cloudflareOkResponse([]),
+      } as unknown as Response);
+
+      const service = createService();
+      service.onModuleInit();
+
+      await service.query('SELECT 1');
+
+      const [, init] = (globalThis.fetch as jest.Mock).mock.calls[0] as [
+        string,
+        RequestInit,
+      ];
+      const headers = init.headers as Record<string, string>;
+      expect(headers['Authorization']).toBe('Bearer test-api-token');
+    });
+
+    it('does not retain the raw token in own enumerable service state', () => {
+      const service = createService();
+      const serialized = JSON.stringify(service);
+      expect(serialized).not.toContain('test-api-token');
+    });
+
+    it('does not expose the token through logger arguments or error paths', async () => {
+      const service = createService();
+      const logSpy = jest.spyOn((service as any).logger, 'error');
+
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: false,
+          result: [],
+          errors: [{ code: 7500, message: 'boom' }],
+          messages: [],
+        }),
+      } as unknown as Response);
+
+      await service.query('SELECT 1').catch(() => undefined);
+
+      for (const call of logSpy.mock.calls) {
+        expect(JSON.stringify(call)).not.toContain('test-api-token');
+      }
     });
   });
 });

@@ -15,9 +15,6 @@ export class D1Service implements OnModuleInit {
   /** D1 REST API endpoint — built once in constructor, reused for every query. */
   private readonly endpointUrl: string;
 
-  /** Bearer token for Cloudflare API authentication. */
-  private readonly apiToken: string;
-
   /** Timeout in milliseconds for each fetch call to the D1 REST API. */
   private readonly timeoutMs = 10_000;
 
@@ -25,7 +22,6 @@ export class D1Service implements OnModuleInit {
     const accountId = this.config.get<string>('CLOUDFLARE_ACCOUNT_ID') ?? '';
     const databaseId =
       this.config.get<string>('CLOUDFLARE_D1_DATABASE_ID') ?? '';
-    this.apiToken = this.config.get<string>('CLOUDFLARE_API_TOKEN') ?? '';
 
     this.endpointUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
   }
@@ -36,18 +32,16 @@ export class D1Service implements OnModuleInit {
    * Fails fast at startup instead of waiting for the first request to fail.
    */
   onModuleInit(): void {
-    const required: Record<string, string> = {
-      CLOUDFLARE_ACCOUNT_ID:
-        this.config.get<string>('CLOUDFLARE_ACCOUNT_ID') ?? '',
-      CLOUDFLARE_D1_DATABASE_ID:
-        this.config.get<string>('CLOUDFLARE_D1_DATABASE_ID') ?? '',
-      CLOUDFLARE_API_TOKEN:
-        this.config.get<string>('CLOUDFLARE_API_TOKEN') ?? '',
-    };
+    const requiredKeys = [
+      'CLOUDFLARE_ACCOUNT_ID',
+      'CLOUDFLARE_D1_DATABASE_ID',
+      'CLOUDFLARE_API_TOKEN',
+    ] as const;
 
-    const missing = Object.entries(required)
-      .filter(([, value]) => value.trim() === '')
-      .map(([key]) => key);
+    // Validate names only. Do not collect secrets into a loggable object.
+    const missing = requiredKeys.filter(
+      (key) => (this.config.get<string>(key) ?? '').trim() === '',
+    );
 
     if (missing.length > 0) {
       throw new Error(
@@ -80,10 +74,14 @@ export class D1Service implements OnModuleInit {
     let response: Response;
 
     try {
+      // Resolve the token on demand so it is never held in serializable
+      // service state; it exists only for the duration of this request.
+      const apiToken = this.config.get<string>('CLOUDFLARE_API_TOKEN') ?? '';
+
       response = await fetch(this.endpointUrl, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${this.apiToken}`,
+          Authorization: `Bearer ${apiToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ sql, params }),

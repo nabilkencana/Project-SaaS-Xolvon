@@ -1,7 +1,7 @@
 import { validateEnvironment } from './env.validation';
 
 describe('validateEnvironment', () => {
-  const validBase = {
+  const validBase: Record<string, string> = {
     CLOUDFLARE_ACCOUNT_ID: 'acct_1234567890',
     CLOUDFLARE_D1_DATABASE_ID: 'db_1234567890',
     CLOUDFLARE_API_TOKEN: 'cf-token-secret-value',
