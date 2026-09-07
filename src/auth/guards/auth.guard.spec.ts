@@ -112,4 +112,74 @@ describe('AuthGuard', () => {
       secret: 'test-jwt-secret',
     });
   });
+
+  it('should treat an expired token as unauthorized with a stable message', async () => {
+    mockReflector.getAllAndOverride.mockReturnValueOnce(false);
+    const { context } = createMockContext({
+      authorization: 'Bearer expired.jwt.token',
+    });
+
+    mockJwtService.verifyAsync.mockRejectedValueOnce(
+      new Error('jwt expired'),
+    );
+
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      'Invalid or expired token.',
+    );
+  });
+
+  it('should distinguish malformed tokens from missing headers with 401s', async () => {
+    mockReflector.getAllAndOverride.mockReturnValue(false);
+
+    const missingHeader = createMockContext({});
+    await expect(guard.canActivate(missingHeader.context)).rejects.toThrow(
+      'Missing or invalid authorization token.',
+    );
+
+    const malformed = createMockContext({ authorization: 'Bearer' });
+    await expect(guard.canActivate(malformed.context)).rejects.toThrow(
+      'Missing or invalid authorization token.',
+    );
+
+    const emptyBearer = createMockContext({ authorization: 'Bearer ' });
+    await expect(guard.canActivate(emptyBearer.context)).rejects.toThrow(
+      'Missing or invalid authorization token.',
+    );
+  });
+
+  it('should read JWT_SECRET on demand for every activation, not cache it', async () => {
+    mockReflector.getAllAndOverride.mockReturnValue(false);
+    const { context } = createMockContext({
+      authorization: 'Bearer some.token',
+    });
+
+    mockJwtService.verifyAsync.mockResolvedValue({
+      sub: 'u1',
+      email: 'e@x.com',
+      role: 'user',
+    });
+
+    await guard.canActivate(context);
+    await guard.canActivate(context);
+
+    expect(mockConfigService.get).toHaveBeenCalledWith('JWT_SECRET');
+    expect(mockConfigService.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('should reject when JWT_SECRET is not configured', async () => {
+    mockReflector.getAllAndOverride.mockReturnValueOnce(false);
+    const { context } = createMockContext({
+      authorization: 'Bearer some.token',
+    });
+
+    mockConfigService.get = jest.fn(() => undefined) as any;
+    guard = new AuthGuard(mockJwtService, mockConfigService, mockReflector);
+    mockJwtService.verifyAsync.mockRejectedValueOnce(
+      new Error('secret or private key must be provided'),
+    );
+
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      UnauthorizedException,
+    );
+  });
 });
