@@ -329,6 +329,111 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
     });
   });
 
+  describe('GET /api/home (public aggregation)', () => {
+    it('returns the four sections without auth, mapped to card DTOs', async () => {
+      dbQueryAll
+        .mockResolvedValueOnce([
+          {
+            id: 'course-h-1',
+            title: 'Course H',
+            slug: 'course-h',
+            description: 'Outcome H',
+            price: 150000,
+            thumbnail_url: 'https://cdn.example.com/course-h.jpg',
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'project-h-1',
+            title: 'Project H',
+            slug: 'project-h',
+            summary: 'Summary H',
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'item-h-1',
+            title: 'Item H',
+            slug: 'item-h',
+            description: 'Description H',
+            external_url: 'https://example.com/item-h',
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'member-h-1',
+            name: 'Member H',
+            slug: 'member-h',
+            photo: null,
+            role: 'Engineer',
+            skills: '["typescript"]',
+            social_links: '["https://github.com/xolvon"]',
+          },
+        ]);
+
+      // No Authorization header — the endpoint must be public.
+      const res = await request(app.getHttpServer()).get('/api/home').expect(200);
+
+      expect(res.body).toEqual({
+        courses: [
+          {
+            id: 'course-h-1',
+            title: 'Course H',
+            slug: 'course-h',
+            description: 'Outcome H',
+            price: 150000,
+            thumbnailUrl: 'https://cdn.example.com/course-h.jpg',
+          },
+        ],
+        projects: [
+          { id: 'project-h-1', title: 'Project H', slug: 'project-h', summary: 'Summary H' },
+        ],
+        marketplace: [
+          {
+            id: 'item-h-1',
+            title: 'Item H',
+            slug: 'item-h',
+            description: 'Description H',
+            externalUrl: 'https://example.com/item-h',
+          },
+        ],
+        collective: [
+          {
+            id: 'member-h-1',
+            name: 'Member H',
+            slug: 'member-h',
+            photo: null,
+            role: 'Engineer',
+            skills: ['typescript'],
+            socialLinks: ['https://github.com/xolvon'],
+          },
+        ],
+      });
+    });
+
+    it('runs exactly one published-only query per section (no N+1, no writes)', async () => {
+      dbQueryAll
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+
+      await request(app.getHttpServer()).get('/api/home').expect(200);
+
+      expect(dbQueryAll).toHaveBeenCalledTimes(4);
+      expect(dbQueryOne).not.toHaveBeenCalled();
+      expect(dbExecute).not.toHaveBeenCalled();
+
+      // Every section query filters to published content only, so a draft row
+      // in the database can never appear in the response.
+      for (const [sql, params] of dbQueryAll.mock.calls) {
+        expect(sql).toContain("status = 'published'");
+        expect(sql).toContain('LIMIT ?');
+        expect(params).toHaveLength(1);
+      }
+    });
+  });
+
   describe('order verification (status pending → paid only)', () => {
     const adminToken = () =>
       signToken({
