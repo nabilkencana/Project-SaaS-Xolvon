@@ -900,4 +900,222 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
       expect(auditSql).toContain('INSERT INTO admin_audit_logs');
     });
   });
+
+  describe('courses — public catalog, detail, and admin mutations (SCHEMA.md §14-17)', () => {
+    const adminToken = () =>
+      signToken({
+        sub: 'admin-uuid-1',
+        email: 'admin@example.com',
+        role: 'admin',
+      });
+
+    const userToken = () =>
+      signToken({
+        sub: 'user-uuid-1',
+        email: 'e2e.user@example.com',
+        role: 'user',
+      });
+
+    const courseId = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+    const draftCourseRow = {
+      id: courseId,
+      title: 'Draft Course',
+      slug: 'draft-course',
+      description: 'Not ready yet',
+      price: 100000,
+      thumbnail_url: null,
+      status: 'draft',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    it('GET /api/courses returns published-only cards with the DL-011 pagination contract', async () => {
+      dbQueryAll.mockResolvedValueOnce([
+        {
+          ...draftCourseRow,
+          id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+          slug: 'video-saas',
+          title: 'Video SaaS Mastery',
+          description: 'Build video products end to end',
+          price: 250000,
+          status: 'published',
+        },
+      ]);
+      dbQueryOne.mockResolvedValueOnce({ total: 1 });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/courses')
+        .expect(200);
+
+      expect(res.body).toMatchObject({ page: 1, limit: 20, total: 1, query: null });
+      expect(res.body.items).toHaveLength(1);
+      expect(res.body.items[0]).toEqual({
+        id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+        title: 'Video SaaS Mastery',
+        slug: 'video-saas',
+        description: 'Build video products end to end',
+        price: 250000,
+        thumbnailUrl: null,
+        status: 'published',
+      });
+
+      const [listSql] = dbQueryAll.mock.calls[0];
+      expect(listSql).toContain("status = 'published'");
+    });
+
+    it('GET /api/courses/:slug returns the detail with lessons ordered by order_index and no private fields', async () => {
+      dbQueryOne.mockResolvedValueOnce({
+        ...draftCourseRow,
+        slug: 'video-saas',
+        title: 'Video SaaS Mastery',
+        description: 'Build video products end to end',
+        price: 250000,
+        status: 'published',
+      });
+      dbQueryAll.mockResolvedValueOnce([
+        {
+          id: 'lesson-1',
+          course_id: courseId,
+          title: 'Intro',
+          order_index: 1,
+          status: 'published',
+        },
+        {
+          id: 'lesson-2',
+          course_id: courseId,
+          title: 'Setup',
+          order_index: 2,
+          status: 'published',
+        },
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/courses/video-saas')
+        .expect(200);
+
+      expect(res.body).toMatchObject({
+        slug: 'video-saas',
+        price: 250000,
+        status: 'published',
+      });
+      expect(res.body.lessons).toEqual([
+        { id: 'lesson-1', title: 'Intro', orderIndex: 1, status: 'published' },
+        { id: 'lesson-2', title: 'Setup', orderIndex: 2, status: 'published' },
+      ]);
+
+      const bodyText = JSON.stringify(res.body);
+      expect(bodyText).not.toContain('video_object_key');
+      expect(bodyText).not.toContain('videoObjectKey');
+
+      const [lessonsSql] = dbQueryAll.mock.calls[0];
+      expect(lessonsSql).toContain('ORDER BY order_index ASC');
+      expect(lessonsSql).not.toContain('video_object_key');
+    });
+
+    it('GET /api/courses/:slug returns 404 for a draft course', async () => {
+      dbQueryOne.mockResolvedValueOnce(draftCourseRow);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/courses/draft-course')
+        .expect(404);
+
+      expect(res.body.message).toBe('Course tidak ditemukan.');
+    });
+
+    it('rejects create from a non-admin with 403', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/courses')
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .send({
+          title: 'Some Course',
+          slug: 'some-course',
+          description: 'Desc',
+          price: 50000,
+        })
+        .expect(403);
+
+      expect(res.body.message).toBe(
+        'You do not have permission to access this resource.',
+      );
+      expectDbUnused();
+    });
+
+    it('rejects create without authentication with 401', async () => {
+      await request(app.getHttpServer())
+        .post('/api/courses')
+        .send({
+          title: 'Some Course',
+          slug: 'some-course',
+          description: 'Desc',
+          price: 50000,
+        })
+        .expect(401);
+      expectDbUnused();
+    });
+
+    it('rejects mass-assignment fields with 400 (forbidNonWhitelisted)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/courses')
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({
+          title: 'Sneaky Course',
+          slug: 'sneaky-course',
+          description: 'Desc',
+          price: 50000,
+          status: 'published',
+          isAdmin: true,
+        })
+        .expect(400);
+
+      expect(dbExecute).not.toHaveBeenCalled();
+      expectDbUnused();
+    });
+
+    it('creates a draft course as admin and audits the create action', async () => {
+      dbQueryOne.mockResolvedValueOnce(undefined); // slug available
+
+      const res = await request(app.getHttpServer())
+        .post('/api/courses')
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({
+          title: 'Video SaaS Mastery',
+          slug: 'video-saas',
+          description: 'Build video products end to end',
+          price: 250000,
+          thumbnailUrl: 'https://cdn.example.com/cover.png',
+        })
+        .expect(201);
+
+      expect(res.body).toMatchObject({
+        title: 'Video SaaS Mastery',
+        slug: 'video-saas',
+        price: 250000,
+        thumbnailUrl: 'https://cdn.example.com/cover.png',
+        status: 'draft',
+      });
+
+      const [courseSql] = dbExecute.mock.calls[0];
+      expect(courseSql).toContain('INSERT INTO courses');
+      expect(courseSql).toContain("'draft'");
+
+      const [auditSql] = dbExecute.mock.calls[1];
+      expect(auditSql).toContain('INSERT INTO admin_audit_logs');
+    });
+
+    it('publishes a draft course and audits the publish action', async () => {
+      dbQueryOne.mockResolvedValueOnce(draftCourseRow);
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/courses/${courseId}/publish`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .expect(200);
+
+      expect(res.body).toMatchObject({ id: courseId, status: 'published' });
+
+      const [updateSql] = dbExecute.mock.calls[0];
+      expect(updateSql).toContain("UPDATE courses SET status = 'published'");
+      const [auditSql] = dbExecute.mock.calls[1];
+      expect(auditSql).toContain('INSERT INTO admin_audit_logs');
+    });
+  });
 });

@@ -49,6 +49,22 @@ disempurnakan penuh di T16 (`.omo/plans/xolvon-backend-build.md`).
 |---|---|---|---|---|---|---|---|
 | GET | `/api` | Public | - | aktif | Health check / hello | - | `string` (200) |
 
+### Courses (`src/courses/courses.controller.ts`)
+
+| Method | Path | Auth | Role | Status | Deskripsi | Request | Response |
+|---|---|---|---|---|---|---|---|
+| GET | `/api/courses` | Public | - | aktif | Katalog published-only, `?q=` contains pada title (LIKE, wildcard di-escape), `?sort=latest\|oldest` (default latest), pagination DL-011 | - | `{items: CourseCardDto[], page, limit, total, query}` (200) |
+| GET | `/api/courses/:slug` | Public | - | aktif | Detail published-only (draft → 404) + `lessons` terurut `order_index` ASC — ringkasan aman tanpa `content`/`video_object_key`/signed URL (SCHEMA.md §17) | - | `CourseDetailDto` (200) / 404 |
+| POST | `/api/courses` | Bearer JWT | admin | aktif | Buat course (status awal `draft`, UUID server-generated) + audit `create`; slug unik | `CreateCourseDto` | `CourseCardDto` (201) |
+| PATCH | `/api/courses/:id` | Bearer JWT | admin | aktif | Update parsial + audit `update`; slug baru dicek unik | `UpdateCourseDto` | `CourseCardDto` (200) |
+| POST | `/api/courses/:id/publish` | Bearer JWT | admin | aktif | Transisi ketat draft → published, gate field wajib (description, price) + audit `publish` | - | `CourseCardDto` (200) |
+| POST | `/api/courses/:id/unpublish` | Bearer JWT | admin | aktif | Transisi ketat published → draft + audit `unpublish` | - | `CourseCardDto` (200) |
+
+`CourseCardDto` (SCHEMA.md §16): `{id, title, slug, description, price,
+thumbnailUrl, status}`. `CourseDetailDto` menambahkan `lessons:
+LessonSummaryDto[]` dengan `LessonSummaryDto = {id, title, orderIndex,
+status}`.
+
 ### Collective (`src/collective/collective.controller.ts`)
 
 | Method | Path | Auth | Role | Status | Deskripsi | Request | Response |
@@ -74,15 +90,12 @@ non-admin dengan 403 server-side.
 Bagian kosong per modul baru. Path di bawah diambil dari plan; status tetap
 `planned` sampai modul terkait selesai dan barisnya pindah ke tabel aktif.
 
-### Courses — planned (T5)
+### Courses — aktif (T5)
 
-| Method | Path | Auth | Role | Deskripsi |
-|---|---|---|---|---|
-| GET | `/api/courses` | Public | - | Katalog published-only, `?q=&sort=&page=` (kontrak pagination DL-011) |
-| GET | `/api/courses/:slug` | Public | - | Detail aman, tanpa object key/signed URL; draft → 404 |
-| POST | `/api/courses` | Bearer JWT | admin | Buat course (draft) + audit |
-| PATCH | `/api/courses/:id` | Bearer JWT | admin | Ubah course + audit |
-| POST | `/api/courses/:id/publish` | Bearer JWT | admin | Publish course + audit |
+Endpoint sudah pindah ke tabel aktif di atas. `status` tidak pernah diterima
+dari input (DTO tidak memilikinya; global `ValidationPipe`
+`forbidNonWhitelisted` menolak field di luar DTO) — transisi status hanya via
+endpoint publish/unpublish.
 
 ### Lessons & Course Resources — planned (T6)
 
