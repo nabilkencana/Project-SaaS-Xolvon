@@ -25,6 +25,8 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+Backend xolvon.com — kontrak data & produk ada di `SCHEMA.md`, `PRD.md`, `ARCHITECTURE.md`, `RULES.md`, dan `HANDBOOK_BACKEND.md`; keputusan teknis backend tercatat di [`docs/decision-log.md`](docs/decision-log.md) dan daftar endpoint di [`docs/api-contract.md`](docs/api-contract.md).
+
 ## Project setup
 
 ```bash
