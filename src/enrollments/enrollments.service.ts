@@ -3,14 +3,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as crypto from 'node:crypto';
-import { D1Service } from '../database/d1.service';
+import { DatabaseService } from '../database/database.service';
 import type { EnrollmentRow } from './interfaces/enrollment.interface';
 import { EnrollmentResponseDto } from './dto/enrollment-response.dto';
 import { toEnrollmentResponse } from './mappers/enrollment.mapper';
 
 @Injectable()
 export class EnrollmentsService {
-  constructor(private readonly d1: D1Service) {}
+  constructor(private readonly db: DatabaseService) {}
 
   /**
    * Reusable entitlement check to verify if a user has an active, unexpired enrollment for a course.
@@ -31,13 +31,13 @@ export class EnrollmentsService {
       LIMIT 1;
     `;
 
-    const result = await this.d1.query<{ id: string }>(query, [
+    const row = await this.db.queryOne<{ id: string }>(query, [
       userId,
       courseId,
       now,
     ]);
 
-    return result.results.length > 0;
+    return row !== undefined;
   }
 
   /**
@@ -66,8 +66,8 @@ export class EnrollmentsService {
       ORDER BY e.created_at DESC;
     `;
 
-    const result = await this.d1.query<EnrollmentRow>(query, [userId]);
-    return result.results.map(toEnrollmentResponse);
+    const rows = await this.db.queryAll<EnrollmentRow>(query, [userId]);
+    return rows.map(toEnrollmentResponse);
   }
 
   /**
@@ -78,19 +78,18 @@ export class EnrollmentsService {
     _adminId: string,
     enrollmentId: string,
   ): Promise<EnrollmentResponseDto> {
-    const existing = await this.d1.query<EnrollmentRow>(
+    const current = await this.db.queryOne<EnrollmentRow>(
       'SELECT * FROM enrollments WHERE id = ? LIMIT 1;',
       [enrollmentId],
     );
 
-    if (existing.results.length === 0) {
+    if (!current) {
       throw new NotFoundException('Enrollment not found.');
     }
 
-    const current = existing.results[0];
     const now = new Date().toISOString();
 
-    await this.d1.query(
+    await this.db.execute(
       `UPDATE enrollments SET status = 'revoked', revoked_at = ? WHERE id = ?;`,
       [now, enrollmentId],
     );
@@ -135,7 +134,7 @@ export class EnrollmentsService {
         WHERE enrollments.status != 'active';
       `;
 
-      await this.d1.query(upsertSql, [
+      await this.db.execute(upsertSql, [
         enrollmentId,
         userId,
         courseId,

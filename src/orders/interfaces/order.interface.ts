@@ -1,8 +1,4 @@
-export type OrderStatus =
-  | 'pending'
-  | 'awaiting_verification'
-  | 'paid'
-  | 'cancelled';
+export type OrderStatus = 'pending' | 'paid' | 'cancelled';
 
 export interface OrderRow {
   readonly id: string;

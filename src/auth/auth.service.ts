@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'node:crypto';
-import { D1Service } from '../database/d1.service';
+import { DatabaseService } from '../database/database.service';
 import { PasswordService } from './password.service';
 import type { UserRow } from './interfaces/user.interface';
 import type { SessionRow } from './interfaces/session-record.interface';
@@ -19,7 +19,7 @@ import { toSafeUser } from './mappers/user.mapper';
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly d1: D1Service,
+    private readonly db: DatabaseService,
     private readonly jwtService: JwtService,
     private readonly passwordService: PasswordService,
   ) {}
@@ -39,12 +39,12 @@ export class AuthService {
    */
   async register(dto: RegisterDto): Promise<SafeUserDto> {
     // Check if email or phone already exists
-    const existing = await this.d1.query<{ id: string }>(
+    const existing = await this.db.queryOne<{ id: string }>(
       'SELECT id FROM users WHERE email = ? OR phone = ? LIMIT 1;',
       [dto.email, dto.phone],
     );
 
-    if (existing.results.length > 0) {
+    if (existing) {
       throw new ConflictException(
         'An account with these credentials is already registered.',
       );
@@ -54,7 +54,7 @@ export class AuthService {
     const now = new Date().toISOString();
     const passwordHash = await this.passwordService.hash(dto.password);
 
-    await this.d1.query(
+    await this.db.execute(
       `INSERT INTO users (
         id, name, email, phone, password_hash, role, status,
         email_verified, phone_verified, created_at, updated_at
@@ -99,16 +99,14 @@ export class AuthService {
     ipAddress?: string,
     userAgent?: string,
   ): Promise<AuthResponseDto> {
-    const userResult = await this.d1.query<UserRow>(
+    const user = await this.db.queryOne<UserRow>(
       'SELECT * FROM users WHERE email = ? LIMIT 1;',
       [dto.email],
     );
 
-    if (userResult.results.length === 0) {
+    if (!user) {
       throw new UnauthorizedException('Invalid email or password.');
     }
-
-    const user = userResult.results[0];
 
     if (user.status === 'suspended') {
       throw new UnauthorizedException(
@@ -146,7 +144,7 @@ export class AuthService {
     const sessionId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
 
-    await this.d1.query(
+    await this.db.execute(
       `INSERT INTO sessions (
         id, user_id, refresh_token, expires_at, ip_address, user_agent, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?);`,
@@ -175,39 +173,35 @@ export class AuthService {
   async refresh(refreshToken: string): Promise<{ accessToken: string }> {
     const hashedRefreshToken = this.hashToken(refreshToken);
 
-    const sessionResult = await this.d1.query<SessionRow>(
+    const session = await this.db.queryOne<SessionRow>(
       'SELECT * FROM sessions WHERE refresh_token = ? LIMIT 1;',
       [hashedRefreshToken],
     );
 
-    if (sessionResult.results.length === 0) {
+    if (!session) {
       throw new UnauthorizedException('Invalid or expired refresh token.');
     }
 
-    const session = sessionResult.results[0];
-
     if (new Date(session.expires_at).getTime() <= Date.now()) {
       // Clean up expired session row
-      await this.d1.query('DELETE FROM sessions WHERE id = ?;', [session.id]);
+      await this.db.execute('DELETE FROM sessions WHERE id = ?;', [
+        session.id,
+      ]);
       throw new UnauthorizedException('Invalid or expired refresh token.');
     }
 
     // Fetch user to ensure account exists and is active
-    const userResult = await this.d1.query<UserRow>(
+    const user = await this.db.queryOne<UserRow>(
       'SELECT id, email, role, status FROM users WHERE id = ? LIMIT 1;',
       [session.user_id],
     );
 
-    if (
-      userResult.results.length === 0 ||
-      userResult.results[0].status === 'suspended'
-    ) {
+    if (!user || user.status === 'suspended') {
       throw new UnauthorizedException(
         'User account is invalid or suspended.',
       );
     }
 
-    const user = userResult.results[0];
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
@@ -228,7 +222,7 @@ export class AuthService {
   async logout(refreshToken: string): Promise<{ message: string }> {
     const hashedRefreshToken = this.hashToken(refreshToken);
 
-    await this.d1.query('DELETE FROM sessions WHERE refresh_token = ?;', [
+    await this.db.execute('DELETE FROM sessions WHERE refresh_token = ?;', [
       hashedRefreshToken,
     ]);
 

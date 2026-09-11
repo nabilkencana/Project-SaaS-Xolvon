@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as crypto from 'node:crypto';
-import { D1Service } from '../database/d1.service';
+import { DatabaseService } from '../database/database.service';
 import { EnrollmentsService } from '../enrollments/enrollments.service';
 import type { OrderRow } from './interfaces/order.interface';
 import type { OrderItemRow } from './interfaces/order-item.interface';
@@ -20,7 +20,7 @@ import { toOrderResponse } from './mappers/order.mapper';
 @Injectable()
 export class OrdersService {
   constructor(
-    private readonly d1: D1Service,
+    private readonly db: DatabaseService,
     private readonly enrollmentsService: EnrollmentsService,
   ) {}
 
@@ -43,17 +43,17 @@ export class OrdersService {
     // 2. Fetch prices from courses table
     const placeholders = dto.courseIds.map(() => '?').join(', ');
     const coursesQuery = `SELECT id, price FROM courses WHERE id IN (${placeholders});`;
-    const coursesResult = await this.d1.query<{ id: string; price: number }>(
+    const courses = await this.db.queryAll<{ id: string; price: number }>(
       coursesQuery,
       dto.courseIds,
     );
 
-    if (coursesResult.results.length !== dto.courseIds.length) {
+    if (courses.length !== dto.courseIds.length) {
       throw new BadRequestException('Satu atau lebih course tidak ditemukan.');
     }
 
     const courseMap = new Map<string, number>(
-      coursesResult.results.map((c) => [c.id, c.price]),
+      courses.map((c) => [c.id, c.price]),
     );
 
     // 3. Compute total amount from database prices
@@ -100,7 +100,7 @@ export class OrdersService {
       ) VALUES (?, ?, 'pending', ?, ?, NULL, NULL, ?, ?);
     `;
 
-    await this.d1.query(insertOrderSql, [
+    await this.db.execute(insertOrderSql, [
       orderId,
       userId,
       totalAmount,
@@ -120,7 +120,13 @@ export class OrdersService {
         VALUES (?, ?, ?, ?, ?);
       `;
 
-      await this.d1.query(insertItemSql, [itemId, orderId, courseId, price, now]);
+      await this.db.execute(insertItemSql, [
+        itemId,
+        orderId,
+        courseId,
+        price,
+        now,
+      ]);
 
       items.push({
         id: itemId,
@@ -149,31 +155,29 @@ export class OrdersService {
   /**
    * User: Submits transfer payment proof object key (Cloudflare R2 private).
    * Validates ownership to prevent IDOR attacks.
-   * Updates order status from 'pending' to 'awaiting_verification'.
+   * Records the proof only — the order status stays 'pending' until an admin verifies it.
    */
   async submitPaymentProof(
     userId: string,
     orderId: string,
     dto: SubmitPaymentProofDto,
   ): Promise<{ message: string; proofId: string }> {
-    const orderResult = await this.d1.query<OrderRow>(
+    const order = await this.db.queryOne<OrderRow>(
       'SELECT id, user_id, status FROM orders WHERE id = ? LIMIT 1;',
       [orderId],
     );
 
-    if (orderResult.results.length === 0) {
+    if (!order) {
       throw new NotFoundException('Order tidak ditemukan.');
     }
-
-    const order = orderResult.results[0];
 
     // IDOR Prevention: Check that the logged-in user owns this order
     if (order.user_id !== userId) {
       throw new ForbiddenException('Anda tidak memiliki akses ke order ini.');
     }
 
-    // State validation
-    if (order.status !== 'pending' && order.status !== 'awaiting_verification') {
+    // State validation: proofs only attach to orders still awaiting payment.
+    if (order.status !== 'pending') {
       throw new BadRequestException(
         'Bukti pembayaran hanya dapat diunggah untuk order yang berstatus pending.',
       );
@@ -182,24 +186,18 @@ export class OrdersService {
     const proofId = crypto.randomUUID();
     const now = new Date().toISOString();
 
-    // Insert payment proof record
+    // Insert payment proof record — the order status remains 'pending'.
     const insertProofSql = `
       INSERT INTO payment_proofs (id, order_id, object_key, uploaded_by, uploaded_at)
       VALUES (?, ?, ?, ?, ?);
     `;
-    await this.d1.query(insertProofSql, [
+    await this.db.execute(insertProofSql, [
       proofId,
       orderId,
       dto.objectKey,
       userId,
       now,
     ]);
-
-    // Update order status to 'awaiting_verification'
-    const updateOrderSql = `
-      UPDATE orders SET status = 'awaiting_verification', updated_at = ? WHERE id = ?;
-    `;
-    await this.d1.query(updateOrderSql, [now, orderId]);
 
     return {
       message: 'Bukti pembayaran berhasil diunggah.',
@@ -209,26 +207,20 @@ export class OrdersService {
 
   /**
    * Admin-only: Verifies payment for an order.
-   * Strict transition rule: ONLY allows orders currently in 'awaiting_verification'.
+   * Strict transition rule: ONLY allows orders currently in 'pending' to move to 'paid'.
    * Sets status to 'paid', verified_by to admin user ID, and verified_at to current timestamp.
    */
   async verifyOrder(adminId: string, orderId: string): Promise<OrderResponseDto> {
-    const orderResult = await this.d1.query<OrderRow>(
+    const order = await this.db.queryOne<OrderRow>(
       'SELECT * FROM orders WHERE id = ? LIMIT 1;',
       [orderId],
     );
 
-    if (orderResult.results.length === 0) {
+    if (!order) {
       throw new NotFoundException('Order tidak ditemukan.');
     }
 
-    const order = orderResult.results[0];
-
     // Strict status transition validations
-    if (order.status === 'pending') {
-      throw new BadRequestException('Order belum ada bukti pembayaran.');
-    }
-
     if (order.status === 'paid') {
       throw new BadRequestException(
         'Order sudah diverifikasi dan berstatus paid.',
@@ -241,20 +233,22 @@ export class OrdersService {
       );
     }
 
-    if (order.status !== 'awaiting_verification') {
+    if (order.status !== 'pending') {
+      // Defense-in-depth for rows written before the order-status
+      // reconciliation (unknown/legacy status values).
       throw new BadRequestException(
-        'Hanya order berstatus awaiting_verification yang dapat diverifikasi.',
+        'Hanya order berstatus pending yang dapat diverifikasi.',
       );
     }
 
     const now = new Date().toISOString();
 
-    await this.d1.query(
+    await this.db.execute(
       `UPDATE orders SET status = 'paid', verified_by = ?, verified_at = ?, updated_at = ? WHERE id = ?;`,
       [adminId, now, now, orderId],
     );
 
-    const itemsResult = await this.d1.query<OrderItemRow>(
+    const items = await this.db.queryAll<OrderItemRow>(
       'SELECT * FROM order_items WHERE order_id = ?;',
       [orderId],
     );
@@ -267,7 +261,7 @@ export class OrdersService {
       updated_at: now,
     };
 
-    return toOrderResponse(updatedOrder, itemsResult.results);
+    return toOrderResponse(updatedOrder, items);
   }
 
   /**
@@ -278,16 +272,14 @@ export class OrdersService {
     adminId: string,
     orderId: string,
   ): Promise<OrderActivationResponseDto> {
-    const orderResult = await this.d1.query<OrderRow>(
+    const order = await this.db.queryOne<OrderRow>(
       'SELECT id, user_id, status FROM orders WHERE id = ? LIMIT 1;',
       [orderId],
     );
 
-    if (orderResult.results.length === 0) {
+    if (!order) {
       throw new NotFoundException('Order tidak ditemukan.');
     }
-
-    const order = orderResult.results[0];
 
     if (order.status !== 'paid') {
       throw new BadRequestException(
@@ -295,18 +287,18 @@ export class OrdersService {
       );
     }
 
-    const itemsResult = await this.d1.query<OrderItemRow>(
+    const items = await this.db.queryAll<{ course_id: string }>(
       'SELECT course_id FROM order_items WHERE order_id = ?;',
       [orderId],
     );
 
-    if (itemsResult.results.length === 0) {
+    if (items.length === 0) {
       throw new BadRequestException(
         'Order tidak memiliki item course untuk diaktivasi.',
       );
     }
 
-    const courseIds = itemsResult.results.map((i) => i.course_id);
+    const courseIds = items.map((i) => i.course_id);
 
     const count = await this.enrollmentsService.activateOrderEnrollments(
       orderId,

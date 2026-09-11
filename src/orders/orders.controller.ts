@@ -56,7 +56,7 @@ export class OrdersController {
 
   /**
    * Admin-only: Verify order payment.
-   * Strictly allowed ONLY from status 'awaiting_verification'.
+   * Strictly allowed ONLY from status 'pending' → 'paid'.
    */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')

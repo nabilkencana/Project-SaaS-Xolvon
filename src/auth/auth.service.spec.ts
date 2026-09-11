@@ -3,20 +3,22 @@ import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'node:crypto';
 import { AuthService } from './auth.service';
 import { PasswordService } from './password.service';
-import { D1Service } from '../database/d1.service';
+import { DatabaseService } from '../database/database.service';
 import type { UserRow } from './interfaces/user.interface';
 import type { SessionRow } from './interfaces/session-record.interface';
 
 describe('AuthService', () => {
   let service: AuthService;
-  let mockD1Service: jest.Mocked<D1Service>;
+  let mockDb: { queryAll: jest.Mock; queryOne: jest.Mock; execute: jest.Mock };
   let mockJwtService: jest.Mocked<JwtService>;
   let mockPasswordService: jest.Mocked<PasswordService>;
 
   beforeEach(() => {
-    mockD1Service = {
-      query: jest.fn(),
-    } as unknown as jest.Mocked<D1Service>;
+    mockDb = {
+      queryAll: jest.fn(),
+      queryOne: jest.fn(),
+      execute: jest.fn(),
+    };
 
     mockJwtService = {
       signAsync: jest.fn(),
@@ -29,7 +31,7 @@ describe('AuthService', () => {
     } as unknown as jest.Mocked<PasswordService>;
 
     service = new AuthService(
-      mockD1Service,
+      mockDb as unknown as DatabaseService,
       mockJwtService,
       mockPasswordService,
     );
@@ -77,24 +79,15 @@ describe('AuthService', () => {
     };
 
     it('should successfully register a new user with role user and hashed password', async () => {
-      // Uniqueness check returns empty
-      mockD1Service.query
-        .mockResolvedValueOnce({
-          results: [],
-          meta: {} as any,
-        })
-        // Insert query returns success
-        .mockResolvedValueOnce({
-          results: [],
-          meta: {} as any,
-        });
+      // Uniqueness check returns no row
+      mockDb.queryOne.mockResolvedValueOnce(undefined);
 
       mockPasswordService.hash.mockResolvedValueOnce('$argon2id$mockedhash');
 
       const result = await service.register(registerDto);
 
       // Verify uniqueness query parameters
-      expect(mockD1Service.query).toHaveBeenNthCalledWith(
+      expect(mockDb.queryOne).toHaveBeenNthCalledWith(
         1,
         'SELECT id FROM users WHERE email = ? OR phone = ? LIMIT 1;',
         [registerDto.email, registerDto.phone],
@@ -105,9 +98,9 @@ describe('AuthService', () => {
         registerDto.password,
       );
 
-      // Verify INSERT query was called
-      expect(mockD1Service.query).toHaveBeenNthCalledWith(
-        2,
+      // Verify INSERT query was executed
+      expect(mockDb.execute).toHaveBeenNthCalledWith(
+        1,
         expect.stringContaining('INSERT INTO users'),
         expect.arrayContaining([
           registerDto.name,
@@ -136,10 +129,7 @@ describe('AuthService', () => {
     });
 
     it('should throw generic ConflictException if email or phone is already registered (anti-enumeration)', async () => {
-      mockD1Service.query.mockResolvedValue({
-        results: [{ id: 'existing-id' }],
-        meta: {} as any,
-      });
+      mockDb.queryOne.mockResolvedValue({ id: 'existing-id' });
 
       await expect(service.register(registerDto)).rejects.toThrow(
         ConflictException,
@@ -151,6 +141,7 @@ describe('AuthService', () => {
 
       // Must not proceed to hash or insert
       expect(mockPasswordService.hash).not.toHaveBeenCalled();
+      expect(mockDb.execute).not.toHaveBeenCalled();
     });
   });
 
@@ -164,10 +155,7 @@ describe('AuthService', () => {
     };
 
     it('should throw UnauthorizedException if user is not found', async () => {
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [],
-        meta: {} as any,
-      });
+      mockDb.queryOne.mockResolvedValueOnce(undefined);
 
       await expect(service.login(loginDto)).rejects.toThrow(
         UnauthorizedException,
@@ -175,9 +163,9 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException if user account is suspended', async () => {
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [{ ...sampleUserRow, status: 'suspended' }],
-        meta: {} as any,
+      mockDb.queryOne.mockResolvedValueOnce({
+        ...sampleUserRow,
+        status: 'suspended',
       });
 
       await expect(service.login(loginDto)).rejects.toThrow(
@@ -188,10 +176,7 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException if password does not match', async () => {
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [sampleUserRow],
-        meta: {} as any,
-      });
+      mockDb.queryOne.mockResolvedValueOnce(sampleUserRow);
 
       mockPasswordService.verify.mockResolvedValueOnce(false);
 
@@ -205,17 +190,8 @@ describe('AuthService', () => {
     });
 
     it('should successfully log in, hash refresh token with SHA-256 before persisting, and return plaintext refresh token to client', async () => {
-      mockD1Service.query
-        // User lookup
-        .mockResolvedValueOnce({
-          results: [sampleUserRow],
-          meta: {} as any,
-        })
-        // Session insert
-        .mockResolvedValueOnce({
-          results: [],
-          meta: {} as any,
-        });
+      // User lookup
+      mockDb.queryOne.mockResolvedValueOnce(sampleUserRow);
 
       mockPasswordService.verify.mockResolvedValueOnce(true);
       mockJwtService.signAsync.mockResolvedValueOnce('mocked.jwt.access-token');
@@ -234,14 +210,14 @@ describe('AuthService', () => {
       expect(typeof result.refreshToken).toBe('string');
       expect(result.refreshToken).toHaveLength(64); // 32 bytes hex = 64 chars
 
-      // Verify the session insert into D1 used the SHA-256 hash, NOT the raw token
+      // Verify the session insert used the SHA-256 hash, NOT the raw token
       const expectedHash = crypto
         .createHash('sha256')
         .update(result.refreshToken)
         .digest('hex');
 
-      expect(mockD1Service.query).toHaveBeenNthCalledWith(
-        2,
+      expect(mockDb.execute).toHaveBeenNthCalledWith(
+        1,
         expect.stringContaining('INSERT INTO sessions'),
         expect.arrayContaining([
           expect.any(String), // session id
@@ -281,24 +257,18 @@ describe('AuthService', () => {
     };
 
     it('should query sessions using the SHA-256 hash and return a new access token', async () => {
-      mockD1Service.query
-        // Session lookup
-        .mockResolvedValueOnce({
-          results: [validSessionRow],
-          meta: {} as any,
-        })
+      // Session lookup
+      mockDb.queryOne
+        .mockResolvedValueOnce(validSessionRow)
         // User lookup
-        .mockResolvedValueOnce({
-          results: [sampleUserRow],
-          meta: {} as any,
-        });
+        .mockResolvedValueOnce(sampleUserRow);
 
       mockJwtService.signAsync.mockResolvedValueOnce('new.jwt.access-token');
 
       const result = await service.refresh(rawRefreshToken);
 
       // Verify query used SHA-256 hash, NOT raw token
-      expect(mockD1Service.query).toHaveBeenNthCalledWith(
+      expect(mockDb.queryOne).toHaveBeenNthCalledWith(
         1,
         'SELECT * FROM sessions WHERE refresh_token = ? LIMIT 1;',
         [hashedRefreshToken],
@@ -316,10 +286,7 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException if session is not found', async () => {
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [],
-        meta: {} as any,
-      });
+      mockDb.queryOne.mockResolvedValueOnce(undefined);
 
       await expect(service.refresh('nonexistent-token')).rejects.toThrow(
         UnauthorizedException,
@@ -332,38 +299,24 @@ describe('AuthService', () => {
         expires_at: new Date(Date.now() - 1000).toISOString(), // expired 1s ago
       };
 
-      mockD1Service.query
-        .mockResolvedValueOnce({
-          results: [expiredSessionRow],
-          meta: {} as any,
-        })
-        .mockResolvedValueOnce({
-          results: [],
-          meta: {} as any,
-        });
+      mockDb.queryOne.mockResolvedValueOnce(expiredSessionRow);
 
       await expect(service.refresh(rawRefreshToken)).rejects.toThrow(
         UnauthorizedException,
       );
 
-      // Verify expired session was deleted using hashed token / session id
-      expect(mockD1Service.query).toHaveBeenNthCalledWith(
-        2,
+      // Verify expired session was deleted using session id
+      expect(mockDb.execute).toHaveBeenNthCalledWith(
+        1,
         'DELETE FROM sessions WHERE id = ?;',
         [expiredSessionRow.id],
       );
     });
 
     it('should throw UnauthorizedException if user is suspended', async () => {
-      mockD1Service.query
-        .mockResolvedValueOnce({
-          results: [validSessionRow],
-          meta: {} as any,
-        })
-        .mockResolvedValueOnce({
-          results: [{ ...sampleUserRow, status: 'suspended' }],
-          meta: {} as any,
-        });
+      mockDb.queryOne
+        .mockResolvedValueOnce(validSessionRow)
+        .mockResolvedValueOnce({ ...sampleUserRow, status: 'suspended' });
 
       await expect(service.refresh(rawRefreshToken)).rejects.toThrow(
         new UnauthorizedException('User account is invalid or suspended.'),
@@ -382,14 +335,9 @@ describe('AuthService', () => {
         .update(rawToken)
         .digest('hex');
 
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [],
-        meta: {} as any,
-      });
-
       const result = await service.logout(rawToken);
 
-      expect(mockD1Service.query).toHaveBeenCalledWith(
+      expect(mockDb.execute).toHaveBeenCalledWith(
         'DELETE FROM sessions WHERE refresh_token = ?;',
         [expectedHash],
       );

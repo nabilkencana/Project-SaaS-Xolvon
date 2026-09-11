@@ -4,19 +4,29 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
-import { D1Service } from '../database/d1.service';
+import { DatabaseService } from '../database/database.service';
 import { EnrollmentsService } from '../enrollments/enrollments.service';
 import type { OrderRow } from './interfaces/order.interface';
 
+/**
+ * Rows carrying statuses outside the reconciled `pending|paid|cancelled` set
+ * (e.g. legacy `awaiting_verification` rows written before the status
+ * collapse) must still be rejected at runtime by the state guards.
+ */
+const LEGACY_AWAITING_VERIFICATION =
+  'awaiting_verification' as unknown as OrderRow['status'];
+
 describe('OrdersService', () => {
   let service: OrdersService;
-  let mockD1Service: jest.Mocked<D1Service>;
+  let mockDb: { queryAll: jest.Mock; queryOne: jest.Mock; execute: jest.Mock };
   let mockEnrollmentsService: jest.Mocked<EnrollmentsService>;
 
   beforeEach(() => {
-    mockD1Service = {
-      query: jest.fn(),
-    } as unknown as jest.Mocked<D1Service>;
+    mockDb = {
+      queryAll: jest.fn(),
+      queryOne: jest.fn(),
+      execute: jest.fn(),
+    };
 
     mockEnrollmentsService = {
       activateOrderEnrollments: jest.fn(),
@@ -25,7 +35,10 @@ describe('OrdersService', () => {
       revokeEnrollment: jest.fn(),
     } as unknown as jest.Mocked<EnrollmentsService>;
 
-    service = new OrdersService(mockD1Service, mockEnrollmentsService);
+    service = new OrdersService(
+      mockDb as unknown as DatabaseService,
+      mockEnrollmentsService,
+    );
   });
 
   afterEach(() => {
@@ -52,10 +65,7 @@ describe('OrdersService', () => {
     });
 
     it('should throw BadRequestException if one or more courses are not found in DB', async () => {
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [{ id: 'c-1', price: 100000 }],
-        meta: {} as any,
-      });
+      mockDb.queryAll.mockResolvedValueOnce([{ id: 'c-1', price: 100000 }]);
 
       await expect(
         service.checkout('user-1', {
@@ -67,10 +77,7 @@ describe('OrdersService', () => {
     });
 
     it('should throw BadRequestException if total amount is zero or less', async () => {
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [{ id: 'c-1', price: 0 }],
-        meta: {} as any,
-      });
+      mockDb.queryAll.mockResolvedValueOnce([{ id: 'c-1', price: 0 }]);
 
       await expect(
         service.checkout('user-1', {
@@ -85,20 +92,10 @@ describe('OrdersService', () => {
 
     it('should compute amount from database prices, create order and items', async () => {
       // 1. courses query
-      mockD1Service.query
-        .mockResolvedValueOnce({
-          results: [
-            { id: 'c-1', price: 150000 },
-            { id: 'c-2', price: 200000 },
-          ],
-          meta: {} as any,
-        })
-        // 2. insert order
-        .mockResolvedValueOnce({ results: [], meta: {} as any })
-        // 3. insert item 1
-        .mockResolvedValueOnce({ results: [], meta: {} as any })
-        // 4. insert item 2
-        .mockResolvedValueOnce({ results: [], meta: {} as any });
+      mockDb.queryAll.mockResolvedValueOnce([
+        { id: 'c-1', price: 150000 },
+        { id: 'c-2', price: 200000 },
+      ]);
 
       const result = await service.checkout('user-1', {
         courseIds: ['c-1', 'c-2'],
@@ -114,7 +111,10 @@ describe('OrdersService', () => {
       expect(result.items[1].courseId).toBe('c-2');
       expect(result.items[1].price).toBe(200000);
 
-      expect(mockD1Service.query).toHaveBeenCalledTimes(4);
+      expect(mockDb.queryAll).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+      const [orderSql] = mockDb.execute.mock.calls[0];
+      expect(orderSql).toContain('INSERT INTO orders');
     });
   });
 
@@ -123,10 +123,7 @@ describe('OrdersService', () => {
   // ---------------------------------------------------------------------------
   describe('submitPaymentProof', () => {
     it('should throw NotFoundException if order does not exist', async () => {
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [],
-        meta: {} as any,
-      });
+      mockDb.queryOne.mockResolvedValueOnce(undefined);
 
       await expect(
         service.submitPaymentProof('user-1', 'ord-1', {
@@ -136,15 +133,10 @@ describe('OrdersService', () => {
     });
 
     it('should throw ForbiddenException if order belongs to another user (IDOR prevention)', async () => {
-      const orderRow: Partial<OrderRow> = {
+      mockDb.queryOne.mockResolvedValueOnce({
         id: 'ord-1',
         user_id: 'other-user',
         status: 'pending',
-      };
-
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [orderRow as OrderRow],
-        meta: {} as any,
       });
 
       await expect(
@@ -156,16 +148,11 @@ describe('OrdersService', () => {
       );
     });
 
-    it('should throw BadRequestException if order status is not pending or awaiting_verification', async () => {
-      const orderRow: Partial<OrderRow> = {
+    it('should throw BadRequestException if order status is paid (state validation)', async () => {
+      mockDb.queryOne.mockResolvedValueOnce({
         id: 'ord-1',
         user_id: 'user-1',
         status: 'paid',
-      };
-
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [orderRow as OrderRow],
-        meta: {} as any,
       });
 
       await expect(
@@ -175,20 +162,30 @@ describe('OrdersService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('should insert payment proof and update order status to awaiting_verification', async () => {
-      const orderRow: Partial<OrderRow> = {
+    it('should reject legacy awaiting_verification rows (status no longer exists)', async () => {
+      mockDb.queryOne.mockResolvedValueOnce({
+        id: 'ord-1',
+        user_id: 'user-1',
+        status: LEGACY_AWAITING_VERIFICATION,
+      });
+
+      await expect(
+        service.submitPaymentProof('user-1', 'ord-1', {
+          objectKey: 'proofs/ord-1.jpg',
+        }),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'Bukti pembayaran hanya dapat diunggah untuk order yang berstatus pending.',
+        ),
+      );
+    });
+
+    it('should insert payment proof and keep the order status pending (no status update)', async () => {
+      mockDb.queryOne.mockResolvedValueOnce({
         id: 'ord-1',
         user_id: 'user-1',
         status: 'pending',
-      };
-
-      mockD1Service.query
-        .mockResolvedValueOnce({
-          results: [orderRow as OrderRow],
-          meta: {} as any,
-        })
-        .mockResolvedValueOnce({ results: [], meta: {} as any })
-        .mockResolvedValueOnce({ results: [], meta: {} as any });
+      });
 
       const result = await service.submitPaymentProof('user-1', 'ord-1', {
         objectKey: 'proofs/ord-1.jpg',
@@ -196,13 +193,15 @@ describe('OrdersService', () => {
 
       expect(result.message).toBe('Bukti pembayaran berhasil diunggah.');
       expect(result.proofId).toBeDefined();
-      expect(mockD1Service.query).toHaveBeenNthCalledWith(
-        3,
-        expect.stringContaining(
-          "UPDATE orders SET status = 'awaiting_verification'",
-        ),
-        [expect.any(String), 'ord-1'],
-      );
+
+      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      const [proofSql] = mockDb.execute.mock.calls[0];
+      expect(proofSql).toContain('INSERT INTO payment_proofs');
+
+      const touchedSqls = mockDb.execute.mock.calls.map(([sql]) => sql);
+      expect(
+        touchedSqls.some((sql) => sql.includes('UPDATE orders')),
+      ).toBe(false);
     });
   });
 
@@ -211,41 +210,55 @@ describe('OrdersService', () => {
   // ---------------------------------------------------------------------------
   describe('verifyOrder', () => {
     it('should throw NotFoundException if order does not exist', async () => {
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [],
-        meta: {} as any,
-      });
+      mockDb.queryOne.mockResolvedValueOnce(undefined);
 
       await expect(service.verifyOrder('admin-1', 'ord-1')).rejects.toThrow(
         NotFoundException,
       );
     });
 
-    it('should throw BadRequestException("Order belum ada bukti pembayaran.") if order is pending', async () => {
-      const orderRow: Partial<OrderRow> = {
+    it('should transition a pending order to paid and record verified_by and verified_at', async () => {
+      mockDb.queryOne.mockResolvedValueOnce({
         id: 'ord-1',
+        user_id: 'user-1',
         status: 'pending',
-      };
-
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [orderRow as OrderRow],
-        meta: {} as any,
+        amount: 150000,
+        notes: '',
+        verified_by: null,
+        verified_at: null,
+        created_at: '2026-09-04T00:00:00.000Z',
+        updated_at: '2026-09-04T00:00:00.000Z',
       });
+      mockDb.queryAll.mockResolvedValueOnce([
+        {
+          id: 'it-1',
+          order_id: 'ord-1',
+          course_id: 'c-1',
+          price: 150000,
+          created_at: '2026-09-04T00:00:00.000Z',
+        },
+      ]);
 
-      await expect(service.verifyOrder('admin-1', 'ord-1')).rejects.toThrow(
-        new BadRequestException('Order belum ada bukti pembayaran.'),
-      );
+      const result = await service.verifyOrder('admin-1', 'ord-1');
+
+      expect(result.status).toBe('paid');
+      expect(result.verifiedAt).toBeDefined();
+      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      const [updateSql, updateParams] = mockDb.execute.mock.calls[0];
+      expect(updateSql).toContain("UPDATE orders SET status = 'paid'");
+      expect(updateParams).toEqual([
+        'admin-1',
+        expect.any(String),
+        expect.any(String),
+        'ord-1',
+      ]);
     });
 
     it('should throw BadRequestException if order is already paid', async () => {
-      const orderRow: Partial<OrderRow> = {
+      mockDb.queryOne.mockResolvedValueOnce({
         id: 'ord-1',
+        user_id: 'user-1',
         status: 'paid',
-      };
-
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [orderRow as OrderRow],
-        meta: {} as any,
       });
 
       await expect(service.verifyOrder('admin-1', 'ord-1')).rejects.toThrow(
@@ -256,14 +269,10 @@ describe('OrdersService', () => {
     });
 
     it('should throw BadRequestException if order is cancelled', async () => {
-      const orderRow: Partial<OrderRow> = {
+      mockDb.queryOne.mockResolvedValueOnce({
         id: 'ord-1',
+        user_id: 'user-1',
         status: 'cancelled',
-      };
-
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [orderRow as OrderRow],
-        meta: {} as any,
       });
 
       await expect(service.verifyOrder('admin-1', 'ord-1')).rejects.toThrow(
@@ -273,47 +282,19 @@ describe('OrdersService', () => {
       );
     });
 
-    it('should update status to paid and record verified_by and verified_at for awaiting_verification order', async () => {
-      const orderRow: OrderRow = {
+    it('should reject legacy awaiting_verification rows (only pending can be verified)', async () => {
+      mockDb.queryOne.mockResolvedValueOnce({
         id: 'ord-1',
         user_id: 'user-1',
-        status: 'awaiting_verification',
-        amount: 150000,
-        notes: '',
-        verified_by: null,
-        verified_at: null,
-        created_at: '2026-09-04T00:00:00.000Z',
-        updated_at: '2026-09-04T00:00:00.000Z',
-      };
+        status: LEGACY_AWAITING_VERIFICATION,
+      });
 
-      mockD1Service.query
-        .mockResolvedValueOnce({
-          results: [orderRow],
-          meta: {} as any,
-        })
-        .mockResolvedValueOnce({ results: [], meta: {} as any })
-        .mockResolvedValueOnce({
-          results: [
-            {
-              id: 'it-1',
-              order_id: 'ord-1',
-              course_id: 'c-1',
-              price: 150000,
-              created_at: '2026-09-04T00:00:00.000Z',
-            },
-          ],
-          meta: {} as any,
-        });
-
-      const result = await service.verifyOrder('admin-1', 'ord-1');
-
-      expect(result.status).toBe('paid');
-      expect(result.verifiedAt).toBeDefined();
-      expect(mockD1Service.query).toHaveBeenNthCalledWith(
-        2,
-        expect.stringContaining("UPDATE orders SET status = 'paid'"),
-        ['admin-1', expect.any(String), expect.any(String), 'ord-1'],
+      await expect(service.verifyOrder('admin-1', 'ord-1')).rejects.toThrow(
+        new BadRequestException(
+          'Hanya order berstatus pending yang dapat diverifikasi.',
+        ),
       );
+      expect(mockDb.execute).not.toHaveBeenCalled();
     });
   });
 
@@ -322,10 +303,7 @@ describe('OrdersService', () => {
   // ---------------------------------------------------------------------------
   describe('activateOrder', () => {
     it('should throw NotFoundException if order does not exist', async () => {
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [],
-        meta: {} as any,
-      });
+      mockDb.queryOne.mockResolvedValueOnce(undefined);
 
       await expect(service.activateOrder('admin-1', 'ord-1')).rejects.toThrow(
         NotFoundException,
@@ -333,15 +311,10 @@ describe('OrdersService', () => {
     });
 
     it('should throw BadRequestException if order status is not paid', async () => {
-      const orderRow: Partial<OrderRow> = {
+      mockDb.queryOne.mockResolvedValueOnce({
         id: 'ord-1',
         user_id: 'user-1',
-        status: 'awaiting_verification',
-      };
-
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [orderRow as OrderRow],
-        meta: {} as any,
+        status: 'pending',
       });
 
       await expect(service.activateOrder('admin-1', 'ord-1')).rejects.toThrow(
@@ -352,29 +325,20 @@ describe('OrdersService', () => {
     });
 
     it('should delegate to enrollmentsService.activateOrderEnrollments for paid order', async () => {
-      const orderRow: Partial<OrderRow> = {
+      mockDb.queryOne.mockResolvedValueOnce({
         id: 'ord-1',
         user_id: 'user-1',
         status: 'paid',
-      };
-
-      mockD1Service.query
-        .mockResolvedValueOnce({
-          results: [orderRow as OrderRow],
-          meta: {} as any,
-        })
-        .mockResolvedValueOnce({
-          results: [
-            {
-              id: 'it-1',
-              order_id: 'ord-1',
-              course_id: 'c-1',
-              price: 150000,
-              created_at: '2026-09-04T00:00:00.000Z',
-            },
-          ],
-          meta: {} as any,
-        });
+      });
+      mockDb.queryAll.mockResolvedValueOnce([
+        {
+          id: 'it-1',
+          order_id: 'ord-1',
+          course_id: 'c-1',
+          price: 150000,
+          created_at: '2026-09-04T00:00:00.000Z',
+        },
+      ]);
 
       mockEnrollmentsService.activateOrderEnrollments.mockResolvedValueOnce(1);
 

@@ -2,24 +2,20 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseService } from './database.service';
 import { D1Service } from './d1.service';
-import type { D1QueryResult } from './d1.types';
-
-/** Shown when DB_DRIVER=d1 until the D1 REST adapter is wired behind this module (todo T3). */
-const D1_NOT_WIRED_ERROR =
-  'DatabaseModule: adapter D1 REST belum di-wire (todo T3). ' +
-  'Gunakan DB_DRIVER=sqlite (default) untuk development lokal.';
+import { D1RestAdapter } from './d1-rest.adapter';
 
 /**
  * Wires the active database driver behind the DatabaseService DI token.
  *
  * - DB_DRIVER=sqlite (default) → better-sqlite3 at local.db (HANDBOOK_BACKEND.md §2).
- * - DB_DRIVER=d1 → fails fast at bootstrap until the D1 REST adapter lands (todo T3).
+ * - DB_DRIVER=d1 → D1RestAdapter delegating to D1Service (Cloudflare D1 REST API),
+ *   so the D1 hardening invariants (token resolved on demand, never stored as a
+ *   service field — commit 0c83956) stay in d1.service.ts untouched.
  *
- * Temporary compat bridge: auth/orders/enrollments still inject D1Service
- * directly until the data-layer unification in T3. Until then D1Service is
- * provided here as a thin adapter over the same DatabaseService instance so
- * the app runs on sqlite without Cloudflare credentials. This provider is
- * removed when T3 rewires those modules to the DatabaseService token.
+ * The DatabaseService class is used as the DI token/interface: domain modules
+ * inject the token and never know which driver is active. The cast below is
+ * the single sanctioned boundary where a non-DatabaseService implementation is
+ * placed under the token (same pattern as the removed T1 compat bridge).
  */
 @Module({
   providers: [
@@ -30,7 +26,12 @@ const D1_NOT_WIRED_ERROR =
         const driver = (config.get<string>('DB_DRIVER') ?? 'sqlite').trim();
 
         if (driver === 'd1') {
-          throw new Error(D1_NOT_WIRED_ERROR);
+          const d1 = new D1Service(config);
+          // Lifecycle hooks do not run for instances constructed inside a
+          // factory; invoke the credential fail-fast explicitly so a
+          // misconfigured d1 bootstrap still dies here, not on first request.
+          d1.onModuleInit();
+          return new D1RestAdapter(d1) as unknown as DatabaseService;
         }
 
         if (driver !== 'sqlite') {
@@ -42,36 +43,7 @@ const D1_NOT_WIRED_ERROR =
         return new DatabaseService();
       },
     },
-    {
-      provide: D1Service,
-      inject: [DatabaseService],
-      useFactory: (db: DatabaseService): D1Service => {
-        const adapter = {
-          query: async <T = Record<string, unknown>>(
-            sql: string,
-            params: unknown[] = [],
-          ): Promise<D1QueryResult<T>> => {
-            const results = await db.queryAll<T>(sql, params);
-
-            return {
-              results,
-              meta: {
-                changes: 0,
-                duration: 0,
-                last_row_id: null,
-                changed_db: false,
-                size_after: 0,
-                rows_read: results.length,
-                rows_written: 0,
-              },
-            };
-          },
-        };
-
-        return adapter as unknown as D1Service;
-      },
-    },
   ],
-  exports: [DatabaseService, D1Service],
+  exports: [DatabaseService],
 })
 export class DatabaseModule {}

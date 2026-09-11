@@ -1,18 +1,20 @@
 import { NotFoundException } from '@nestjs/common';
 import { EnrollmentsService } from './enrollments.service';
-import { D1Service } from '../database/d1.service';
+import { DatabaseService } from '../database/database.service';
 import type { EnrollmentRow } from './interfaces/enrollment.interface';
 
 describe('EnrollmentsService', () => {
   let service: EnrollmentsService;
-  let mockD1Service: jest.Mocked<D1Service>;
+  let mockDb: { queryAll: jest.Mock; queryOne: jest.Mock; execute: jest.Mock };
 
   beforeEach(() => {
-    mockD1Service = {
-      query: jest.fn(),
-    } as unknown as jest.Mocked<D1Service>;
+    mockDb = {
+      queryAll: jest.fn(),
+      queryOne: jest.fn(),
+      execute: jest.fn(),
+    };
 
-    service = new EnrollmentsService(mockD1Service);
+    service = new EnrollmentsService(mockDb as unknown as DatabaseService);
   });
 
   afterEach(() => {
@@ -24,16 +26,13 @@ describe('EnrollmentsService', () => {
   // ---------------------------------------------------------------------------
   describe('isUserEntitled', () => {
     it('should return true when an active unexpired enrollment exists', async () => {
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [{ id: 'enrollment-1' }],
-        meta: {} as any,
-      });
+      mockDb.queryOne.mockResolvedValueOnce({ id: 'enrollment-1' });
 
       const result = await service.isUserEntitled('user-1', 'course-1');
 
       expect(result).toBe(true);
-      expect(mockD1Service.query).toHaveBeenCalledTimes(1);
-      const [sql, params] = mockD1Service.query.mock.calls[0];
+      expect(mockDb.queryOne).toHaveBeenCalledTimes(1);
+      const [sql, params] = mockDb.queryOne.mock.calls[0];
       expect(sql).toContain("status = 'active'");
       expect(sql).toContain('expires_at IS NULL OR expires_at > ?');
       expect(params[0]).toBe('user-1');
@@ -41,10 +40,7 @@ describe('EnrollmentsService', () => {
     });
 
     it('should return false when no active enrollment exists', async () => {
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [],
-        meta: {} as any,
-      });
+      mockDb.queryOne.mockResolvedValueOnce(undefined);
 
       const result = await service.isUserEntitled('user-1', 'course-1');
 
@@ -74,10 +70,7 @@ describe('EnrollmentsService', () => {
         },
       ];
 
-      mockD1Service.query.mockResolvedValueOnce({
-        results: sampleRows,
-        meta: {} as any,
-      });
+      mockDb.queryAll.mockResolvedValueOnce(sampleRows);
 
       const result = await service.getUserEnrollments('user-1');
 
@@ -86,7 +79,7 @@ describe('EnrollmentsService', () => {
       expect(result[0].courseId).toBe('c-1');
       expect(result[0].status).toBe('active');
       expect(result[0].courseTitle).toBe('NestJS Masterclass');
-      expect(mockD1Service.query).toHaveBeenCalledWith(
+      expect(mockDb.queryAll).toHaveBeenCalledWith(
         expect.stringContaining('WHERE e.user_id = ?'),
         ['user-1'],
       );
@@ -98,10 +91,7 @@ describe('EnrollmentsService', () => {
   // ---------------------------------------------------------------------------
   describe('revokeEnrollment', () => {
     it('should throw NotFoundException if enrollment does not exist', async () => {
-      mockD1Service.query.mockResolvedValueOnce({
-        results: [],
-        meta: {} as any,
-      });
+      mockDb.queryOne.mockResolvedValueOnce(undefined);
 
       await expect(
         service.revokeEnrollment('admin-1', 'invalid-id'),
@@ -122,21 +112,13 @@ describe('EnrollmentsService', () => {
         created_at: '2026-09-04T00:00:00.000Z',
       };
 
-      mockD1Service.query
-        .mockResolvedValueOnce({
-          results: [sampleRow],
-          meta: {} as any,
-        })
-        .mockResolvedValueOnce({
-          results: [],
-          meta: {} as any,
-        });
+      mockDb.queryOne.mockResolvedValueOnce(sampleRow);
 
       const result = await service.revokeEnrollment('admin-1', 'en-1');
 
       expect(result.status).toBe('revoked');
-      expect(mockD1Service.query).toHaveBeenNthCalledWith(
-        2,
+      expect(mockDb.execute).toHaveBeenNthCalledWith(
+        1,
         expect.stringContaining("UPDATE enrollments SET status = 'revoked'"),
         [expect.any(String), 'en-1'],
       );
@@ -148,10 +130,6 @@ describe('EnrollmentsService', () => {
   // ---------------------------------------------------------------------------
   describe('activateOrderEnrollments', () => {
     it('should execute idempotent ON CONFLICT UPSERT for each courseId', async () => {
-      mockD1Service.query
-        .mockResolvedValueOnce({ results: [], meta: {} as any })
-        .mockResolvedValueOnce({ results: [], meta: {} as any });
-
       const count = await service.activateOrderEnrollments(
         'order-1',
         'user-1',
@@ -160,9 +138,9 @@ describe('EnrollmentsService', () => {
       );
 
       expect(count).toBe(2);
-      expect(mockD1Service.query).toHaveBeenCalledTimes(2);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
 
-      const [firstSql, firstParams] = mockD1Service.query.mock.calls[0];
+      const [firstSql, firstParams] = mockDb.execute.mock.calls[0];
       expect(firstSql).toContain('ON CONFLICT(user_id, course_id) DO UPDATE');
       expect(firstSql).toContain("WHERE enrollments.status != 'active'");
       expect(firstParams[1]).toBe('user-1');
