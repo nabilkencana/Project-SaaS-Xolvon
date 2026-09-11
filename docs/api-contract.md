@@ -101,10 +101,25 @@ Endpoint sudah pindah ke tabel aktif di atas. `skills` disimpan comma-separated
 TEXT dan `social_links` sebagai JSON array TEXT (SCHEMA.md §56); keduanya
 diparse di mapper menjadi `string[]` / `SocialLink[]` yang tidak pernah null.
 
-### Marketplace & Marketplace Media — planned (T9)
+### Marketplace & Marketplace Media (T9, `src/marketplace/`)
 
-Belum ada endpoint. Showcase published-only + search/filter; detail dengan
-`external_url` (tanpa logika transaksi); admin CRUD/publish + audit.
+Showcase murni — tidak ada logika transaksi/checkout (SCHEMA.md §60); satu-
+satunya permukaan komersial adalah `externalUrl` (validasi minimal https,
+DL-013; governance tetap OPEN — PRD §91.11).
+
+| Method | Path | Auth | Role | Status | Deskripsi | Request | Response |
+|---|---|---|---|---|---|---|---|
+| GET | `/api/marketplace` | Public | - | aktif | Listing published-only, `?q=` (LIKE title/description, wildcard di-escape), `?sort=latest\|oldest` (default latest), pagination DL-011 | - | `{items: MarketplaceItemDto[], page, limit, total}` (200) |
+| GET | `/api/marketplace/:slug` | Public | - | aktif | Detail published-only (draft → 404); media urut `sort_order` ASC; capabilities diparse dari comma-separated TEXT | - | `MarketplaceItemDetailDto` (200) / 404 |
+| POST | `/api/marketplace` | Bearer JWT | admin | aktif | Buat listing (status awal `draft`) + audit `create`; `externalUrl` wajib https valid | `CreateMarketplaceItemDto` | `MarketplaceItemDto` (201) |
+| PATCH | `/api/marketplace/:id` | Bearer JWT | admin | aktif | Update parsial + audit `update`; slug baru dicek unik; `externalUrl` divalidasi ulang | `UpdateMarketplaceItemDto` | `MarketplaceItemDto` (200) |
+| POST | `/api/marketplace/:id/publish` | Bearer JWT | admin | aktif | Transisi ketat draft → published + audit `publish` | - | `MarketplaceItemDto` (200) |
+| POST | `/api/marketplace/:id/unpublish` | Bearer JWT | admin | aktif | Transisi ketat published → draft + audit `unpublish` | - | `MarketplaceItemDto` (200) |
+| POST | `/api/marketplace/:id/media` | Bearer JWT | admin | aktif | Attach media (objectKey R2, `mediaType` image\|video\|deck per SCHEMA.md §63) + audit `create` | `AttachMarketplaceMediaDto` | `MarketplaceMediaDto` (201) |
+| DELETE | `/api/marketplace/:id/media/:mediaId` | Bearer JWT | admin | aktif | Detach media ter-scope ke item (lintas item → 404) + audit `delete` | - | `{message}` (200) |
+
+`MarketplaceItemDto` (SCHEMA.md §59): `{id, title, slug, description,
+capabilities: string[], externalUrl, status}`.
 
 ### Home — planned (T10)
 

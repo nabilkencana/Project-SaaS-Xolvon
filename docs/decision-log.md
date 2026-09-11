@@ -389,6 +389,45 @@ Implementasi T17 memakai nilai ini; owner dapat mengganti ambang dengan
 entri decision log baru sebelum T17.
 ```
 
+### DL-013 — Validasi minimal `external_url` marketplace (governance tetap OPEN)
+
+```text
+Problem:
+Marketplace item menampilkan CTA ke website SaaS eksternal (PRD §55), tetapi
+governance `external_url` belum final — PRD §91.11 dan SCHEMA.md §61 menegaskan
+aturan validasi/pengelolaan URL (valid + approved + managed) masih open decision
+dan melarang membangun business logic tambahan berdasarkan asumsi. Implementasi
+T9 tetap butuh aturan minimal agar endpoint tidak menerima nilai berbahaya.
+
+Existing Requirement:
+PRD §91.11 (External SaaS URL Governance); SCHEMA.md §61; plan T9.
+
+Options:
+- Tanpa validasi (menunggu governance final).
+- Validasi minimal: URL absolut valid (URL parse) + https-only; http ditolak.
+- Governance penuh: allowlist domain / approval workflow admin.
+
+Owner:
+Backend (default adopted, track owner sign-off)
+
+Decision:
+Validasi minimal diadopsi untuk V1 di MarketplaceService (create + update):
+`external_url` harus parse sebagai URL absolut valid DAN berprotokol https;
+http ditolak dengan 400 (CTA me-redirect visitor keluar situs, target insecure
+adalah celah redirection security), string non-URL ditolak dengan 400.
+Governance final (approval/allowlist/management workflow) TETAP OPEN — tidak
+diimplementasikan dan tidak digantikan asumsi.
+
+Date:
+2026-09-12
+
+Impact:
+Endpoint marketplace menerima hanya https URL valid sejak T9; owner dapat
+mengganti/memperketat aturan dengan entri decision log baru tanpa mengubah
+kontrak respons. Kepatuhan MarketplaceModule sebagai showcase murni (tanpa
+pembayaran/transaksi, SCHEMA.md §60) tetap berlaku.
+```
+
 ---
 
 ## Konflik dokumen (tercatat + resolusinya)
@@ -420,5 +459,5 @@ diputuskan (tidak ada entri placeholder di log ini):
 - PRD §91.10 — jumlah konten awal.
 - PRD §91.12 — analytics provider pihak ketiga.
 - Plan T7 — enum `type` media project.
-- Plan T9 — governance `external_url` marketplace.
+- Plan T9 — governance `external_url` marketplace (validasi minimal https diadopsi di DL-013; approval/allowlist/management masih terbuka).
 - Plan T12 — kolom WhatsApp/proof pada tabel admin.
