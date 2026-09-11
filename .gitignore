@@ -46,6 +46,12 @@ lerna-debug.log*
 .temp
 .tmp
 
+# Local SQLite database (DB_DRIVER=sqlite)
+local.db
+local.db-journal
+local.db-wal
+local.db-shm
+
 # Runtime data
 pids
 *.pid

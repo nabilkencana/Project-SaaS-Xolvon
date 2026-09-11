@@ -10,14 +10,19 @@
  * CLOUDFLARE_API_TOKEN and JWT_SECRET must not leak into logs or errors).
  */
 
-/** Variables that must be present and non-blank. */
-const REQUIRED_KEYS = [
+/** Variables that must be present and non-blank regardless of DB_DRIVER. */
+const ALWAYS_REQUIRED_KEYS = ['JWT_SECRET', 'FRONTEND_URL'] as const;
+
+/** Cloudflare variables — required only when DB_DRIVER=d1. */
+const CLOUDFLARE_KEYS = [
   'CLOUDFLARE_ACCOUNT_ID',
   'CLOUDFLARE_D1_DATABASE_ID',
   'CLOUDFLARE_API_TOKEN',
-  'JWT_SECRET',
-  'FRONTEND_URL',
 ] as const;
+
+/** Supported database drivers (HANDBOOK_BACKEND.md §2 local mode, §8 D1). */
+const VALID_DB_DRIVERS = ['sqlite', 'd1'] as const;
+const DEFAULT_DB_DRIVER = 'sqlite';
 
 /** Minimum accepted length for the JWT signing secret. */
 export const JWT_SECRET_MIN_LENGTH = 32;
@@ -39,9 +44,35 @@ export function validateEnvironment(
 ): Record<string, unknown> {
   const problems: string[] = [];
 
-  for (const key of REQUIRED_KEYS) {
+  // DB_DRIVER is optional and defaults to sqlite for local development.
+  const rawDriver = config['DB_DRIVER'];
+  let dbDriver: string = DEFAULT_DB_DRIVER;
+  if (rawDriver !== undefined && rawDriver !== null && rawDriver !== '') {
+    const candidate = String(rawDriver).trim();
+    if (!(VALID_DB_DRIVERS as readonly string[]).includes(candidate)) {
+      problems.push(
+        `DB_DRIVER must be one of: ${VALID_DB_DRIVERS.join(', ')} (default: ${DEFAULT_DB_DRIVER})`,
+      );
+    } else {
+      dbDriver = candidate;
+    }
+  }
+
+  for (const key of ALWAYS_REQUIRED_KEYS) {
     if (!isNonBlankString(config[key])) {
       problems.push(`${key} is required and must be a non-empty string`);
+    }
+  }
+
+  // Cloudflare credentials are mandatory only when the D1 driver is active —
+  // local sqlite development must bootstrap without any Cloudflare account.
+  if (dbDriver === 'd1') {
+    for (const key of CLOUDFLARE_KEYS) {
+      if (!isNonBlankString(config[key])) {
+        problems.push(
+          `${key} is required when DB_DRIVER=d1 and must be a non-empty string`,
+        );
+      }
     }
   }
 
@@ -94,9 +125,10 @@ export function validateEnvironment(
   }
 
   // Return a validated copy with coerced values so ConfigService.get<number>('PORT')
-  // consistently returns a number across the application.
+  // consistently returns a number and the resolved DB_DRIVER is explicit.
   return {
     ...config,
     PORT: coercedPort,
+    DB_DRIVER: dbDriver,
   };
 }

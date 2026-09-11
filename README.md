@@ -46,16 +46,19 @@ $ npm run start:prod
 
 ## Environment variables
 
-Salin `.env.example` ke `.env` lalu isi nilainya. Semua variabel berikut **wajib** dan divalidasi saat bootstrap — aplikasi menolak start (fail-fast) jika ada yang kosong/invalid, tanpa pernah mencetak nilai secret ke error atau log:
+Salin `.env.example` ke `.env` lalu isi nilainya. Semua variabel divalidasi saat bootstrap — aplikasi menolak start (fail-fast) jika ada yang kosong/invalid, tanpa pernah mencetak nilai secret ke error atau log:
 
 | Variabel | Aturan |
 |---|---|
-| `CLOUDFLARE_ACCOUNT_ID` | Wajib, non-kosong |
-| `CLOUDFLARE_D1_DATABASE_ID` | Wajib, non-kosong |
-| `CLOUDFLARE_API_TOKEN` | Wajib, non-kosong. Hanya dipakai server-side sebagai header Bearer ke Cloudflare; tidak pernah disimpan sebagai field service yang bisa terserialisasi |
+| `DB_DRIVER` | Opsional, `sqlite` (default, local development via better-sqlite3) atau `d1` (Cloudflare D1) |
+| `CLOUDFLARE_ACCOUNT_ID` | Wajib hanya saat `DB_DRIVER=d1`, non-kosong |
+| `CLOUDFLARE_D1_DATABASE_ID` | Wajib hanya saat `DB_DRIVER=d1`, non-kosong |
+| `CLOUDFLARE_API_TOKEN` | Wajib hanya saat `DB_DRIVER=d1`, non-kosong. Hanya dipakai server-side sebagai header Bearer ke Cloudflare; tidak pernah disimpan sebagai field service yang bisa terserialisasi |
 | `JWT_SECRET` | Wajib, minimal 32 karakter |
 | `FRONTEND_URL` | Wajib, URL absolut `http(s)` yang valid (dipakai untuk CORS origin) |
 | `PORT` | Opsional, integer 1–65535 (default `3000`) |
+
+Development lokal (`DB_DRIVER=sqlite`, default) memakai better-sqlite3 pada `local.db` (di-gitignore) sehingga bootstrap sukses **tanpa kredensial Cloudflare**.
 
 ## Run tests
 

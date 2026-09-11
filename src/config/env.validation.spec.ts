@@ -1,107 +1,169 @@
 import { validateEnvironment } from './env.validation';
 
 describe('validateEnvironment', () => {
-  const validBase: Record<string, string> = {
-    CLOUDFLARE_ACCOUNT_ID: 'acct_1234567890',
-    CLOUDFLARE_D1_DATABASE_ID: 'db_1234567890',
-    CLOUDFLARE_API_TOKEN: 'cf-token-secret-value',
+  /**
+   * SQLite mode (the default) — Cloudflare credentials are optional so the
+   * app bootstraps locally without any Cloudflare account.
+   */
+  const sqliteBase: Record<string, string> = {
     JWT_SECRET: 'a-sufficiently-long-jwt-secret-32ch',
     FRONTEND_URL: 'https://app.example.com',
     PORT: '3000',
   };
 
-  it('accepts a complete valid configuration and coerces PORT to a number', () => {
-    const result = validateEnvironment({ ...validBase });
+  /** D1 mode — every Cloudflare credential becomes mandatory. */
+  const d1Base: Record<string, string> = {
+    ...sqliteBase,
+    DB_DRIVER: 'd1',
+    CLOUDFLARE_ACCOUNT_ID: 'acct_1234567890',
+    CLOUDFLARE_D1_DATABASE_ID: 'db_1234567890',
+    CLOUDFLARE_API_TOKEN: 'cf-token-secret-value',
+  };
 
-    expect(result.PORT).toBe(3000);
-    expect(typeof result.PORT).toBe('number');
-    expect(result.CLOUDFLARE_API_TOKEN).toBe(validBase.CLOUDFLARE_API_TOKEN);
-    expect(result.JWT_SECRET).toBe(validBase.JWT_SECRET);
-    expect(result.FRONTEND_URL).toBe(validBase.FRONTEND_URL);
+  describe('DB_DRIVER contract', () => {
+    it('defaults DB_DRIVER to sqlite when unset', () => {
+      const result = validateEnvironment({ ...sqliteBase });
+
+      expect(result.DB_DRIVER).toBe('sqlite');
+      expect(result.PORT).toBe(3000);
+      expect(typeof result.PORT).toBe('number');
+    });
+
+    it('accepts an explicit DB_DRIVER=sqlite', () => {
+      expect(() =>
+        validateEnvironment({ ...sqliteBase, DB_DRIVER: 'sqlite' }),
+      ).not.toThrow();
+    });
+
+    it('accepts a complete DB_DRIVER=d1 configuration with Cloudflare credentials', () => {
+      const result = validateEnvironment({ ...d1Base });
+
+      expect(result.DB_DRIVER).toBe('d1');
+    });
+
+    it('accepts a sqlite configuration that still carries optional Cloudflare credentials', () => {
+      const result = validateEnvironment({ ...d1Base, DB_DRIVER: 'sqlite' });
+
+      expect(result.CLOUDFLARE_ACCOUNT_ID).toBe(d1Base.CLOUDFLARE_ACCOUNT_ID);
+    });
+
+    it('rejects an unknown DB_DRIVER', () => {
+      expect(() =>
+        validateEnvironment({ ...sqliteBase, DB_DRIVER: 'bogus' }),
+      ).toThrow('DB_DRIVER');
+    });
   });
 
-  it.each([
-    'CLOUDFLARE_ACCOUNT_ID',
-    'CLOUDFLARE_D1_DATABASE_ID',
-    'CLOUDFLARE_API_TOKEN',
-    'JWT_SECRET',
-    'FRONTEND_URL',
-  ])('rejects configuration missing %s', (key) => {
-    const config = { ...validBase };
-    delete config[key];
+  describe('Cloudflare credentials are required only when DB_DRIVER=d1', () => {
+    it.each([
+      'CLOUDFLARE_ACCOUNT_ID',
+      'CLOUDFLARE_D1_DATABASE_ID',
+      'CLOUDFLARE_API_TOKEN',
+    ])('accepts a sqlite configuration missing %s', (key) => {
+      const config: Record<string, string> = { ...d1Base, DB_DRIVER: 'sqlite' };
+      delete config[key];
 
-    expect(() => validateEnvironment(config)).toThrow(key);
+      expect(() => validateEnvironment(config)).not.toThrow();
+    });
+
+    it.each([
+      'CLOUDFLARE_ACCOUNT_ID',
+      'CLOUDFLARE_D1_DATABASE_ID',
+      'CLOUDFLARE_API_TOKEN',
+    ])('rejects a d1 configuration missing %s', (key) => {
+      const config = { ...d1Base };
+      delete config[key];
+
+      expect(() => validateEnvironment(config)).toThrow(key);
+    });
+
+    it.each([
+      'CLOUDFLARE_ACCOUNT_ID',
+      'CLOUDFLARE_D1_DATABASE_ID',
+      'CLOUDFLARE_API_TOKEN',
+    ])('rejects a d1 configuration with a blank %s', (key) => {
+      const config = { ...d1Base, [key]: '   ' };
+
+      expect(() => validateEnvironment(config)).toThrow(key);
+    });
   });
 
-  it.each([
-    'CLOUDFLARE_ACCOUNT_ID',
-    'CLOUDFLARE_D1_DATABASE_ID',
-    'CLOUDFLARE_API_TOKEN',
-    'JWT_SECRET',
-    'FRONTEND_URL',
-  ])('rejects a blank %s', (key) => {
-    const config = { ...validBase, [key]: '   ' };
+  describe('always-required keys', () => {
+    it.each(['JWT_SECRET', 'FRONTEND_URL'])(
+      'rejects configuration missing %s',
+      (key) => {
+        const config = { ...sqliteBase };
+        delete config[key];
 
-    expect(() => validateEnvironment(config)).toThrow(key);
-  });
+        expect(() => validateEnvironment(config)).toThrow(key);
+      },
+    );
 
-  it('rejects a JWT secret shorter than 32 characters without exposing its value', () => {
-    const config = { ...validBase, JWT_SECRET: 'short-secret' };
+    it.each(['JWT_SECRET', 'FRONTEND_URL'])('rejects a blank %s', (key) => {
+      const config = { ...sqliteBase, [key]: '   ' };
 
-    let thrown: unknown;
-    try {
-      validateEnvironment(config);
-    } catch (error) {
-      thrown = error;
-    }
+      expect(() => validateEnvironment(config)).toThrow(key);
+    });
 
-    expect(thrown).toBeInstanceOf(Error);
-    const message = (thrown as Error).message;
-    expect(message).toContain('JWT_SECRET');
-    expect(message).not.toContain('short-secret');
-  });
+    it('rejects a JWT secret shorter than 32 characters without exposing its value', () => {
+      const config = { ...sqliteBase, JWT_SECRET: 'short-secret' };
 
-  it('rejects an invalid FRONTEND_URL without exposing its value', () => {
-    const config = { ...validBase, FRONTEND_URL: 'not-a-url' };
+      let thrown: unknown;
+      try {
+        validateEnvironment(config);
+      } catch (error) {
+        thrown = error;
+      }
 
-    let thrown: unknown;
-    try {
-      validateEnvironment(config);
-    } catch (error) {
-      thrown = error;
-    }
+      expect(thrown).toBeInstanceOf(Error);
+      const message = (thrown as Error).message;
+      expect(message).toContain('JWT_SECRET');
+      expect(message).not.toContain('short-secret');
+    });
 
-    expect(thrown).toBeInstanceOf(Error);
-    const message = (thrown as Error).message;
-    expect(message).toContain('FRONTEND_URL');
-    expect(message).not.toContain('not-a-url');
-  });
+    it('rejects an invalid FRONTEND_URL without exposing its value', () => {
+      const config = { ...sqliteBase, FRONTEND_URL: 'not-a-url' };
 
-  it('rejects a non-numeric PORT', () => {
-    const config = { ...validBase, PORT: 'not-a-port' };
+      let thrown: unknown;
+      try {
+        validateEnvironment(config);
+      } catch (error) {
+        thrown = error;
+      }
 
-    expect(() => validateEnvironment(config)).toThrow('PORT');
-  });
+      expect(thrown).toBeInstanceOf(Error);
+      const message = (thrown as Error).message;
+      expect(message).toContain('FRONTEND_URL');
+      expect(message).not.toContain('not-a-url');
+    });
 
-  it('rejects a PORT outside the valid range', () => {
-    const config = { ...validBase, PORT: '99999' };
+    it('rejects a non-numeric PORT', () => {
+      const config = { ...sqliteBase, PORT: 'not-a-port' };
 
-    expect(() => validateEnvironment(config)).toThrow('PORT');
-  });
+      expect(() => validateEnvironment(config)).toThrow('PORT');
+    });
 
-  it('never includes any secret values in the thrown error message', () => {
-    const config = { ...validBase };
-    delete config.CLOUDFLARE_API_TOKEN;
+    it('rejects a PORT outside the valid range', () => {
+      const config = { ...sqliteBase, PORT: '99999' };
 
-    let thrown: unknown;
-    try {
-      validateEnvironment(config);
-    } catch (error) {
-      thrown = error;
-    }
+      expect(() => validateEnvironment(config)).toThrow('PORT');
+    });
 
-    const message = (thrown as Error).message;
-    expect(message).not.toContain('cf-token-secret-value');
-    expect(message).not.toContain('a-sufficiently-long-jwt-secret-32ch');
+    it('never includes any secret values in the thrown error message', () => {
+      const config = { ...d1Base };
+      delete config.CLOUDFLARE_API_TOKEN;
+
+      let thrown: unknown;
+      try {
+        validateEnvironment(config);
+      } catch (error) {
+        thrown = error;
+      }
+
+      const message = (thrown as Error).message;
+      expect(message).toContain('CLOUDFLARE_API_TOKEN');
+      expect(message).not.toContain('cf-token-secret-value');
+      expect(message).not.toContain('a-sufficiently-long-jwt-secret-32ch');
+    });
   });
 });
