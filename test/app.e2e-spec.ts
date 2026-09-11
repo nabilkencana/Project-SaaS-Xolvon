@@ -434,6 +434,173 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
     });
   });
 
+  describe('collective — member profiles and privacy (SCHEMA.md §54-57)', () => {
+    /**
+     * Security fixture: contact fields are intentionally present in the row
+     * even though migration 0004 has no such columns — the response MUST
+     * strip them (SCHEMA.md §57). Do not remove email/phone from this row.
+     */
+    const memberRowWithContacts = {
+      id: '11111111-1111-4111-8111-111111111111',
+      name: 'Collective Member',
+      slug: 'collective-member',
+      photo: 'https://cdn.example.com/member.jpg',
+      role: 'Fullstack Engineer',
+      skills: 'TypeScript, NestJS',
+      bio: 'Builds the platform.',
+      social_links:
+        '[{"platform":"GitHub","url":"https://github.com/member"}]',
+      status: 'published',
+      display_order: 1,
+      created_at: '2026-09-12T00:00:00.000Z',
+      email: 'private.member@example.com',
+      phone: '+628999888777',
+    };
+
+    it('GET /api/collective returns published members with parsed skills/socialLinks and never leaks email/phone', async () => {
+      dbQueryAll.mockResolvedValueOnce([memberRowWithContacts]); // page rows
+      dbQueryOne.mockResolvedValueOnce({ total: 1 }); // count
+
+      const res = await request(app.getHttpServer())
+        .get('/api/collective')
+        .expect(200);
+
+      expect(res.body).toMatchObject({
+        page: 1,
+        limit: 20,
+        total: 1,
+      });
+      expect(res.body.items).toHaveLength(1);
+      expect(res.body.items[0]).toMatchObject({
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Collective Member',
+        slug: 'collective-member',
+        role: 'Fullstack Engineer',
+        skills: ['TypeScript', 'NestJS'],
+        socialLinks: [
+          { platform: 'GitHub', url: 'https://github.com/member' },
+        ],
+        status: 'published',
+      });
+
+      // Privacy proof: response body is free of personal contact fields.
+      expect(res.body.items[0]).not.toHaveProperty('email');
+      expect(res.body.items[0]).not.toHaveProperty('phone');
+      const serialized = JSON.stringify(res.body);
+      expect(serialized).not.toContain('private.member@example.com');
+      expect(serialized).not.toContain('+628999888777');
+    });
+
+    it('GET /api/collective/:slug returns the member with relatedProjects and never leaks email/phone', async () => {
+      dbQueryOne.mockResolvedValueOnce(memberRowWithContacts); // member by slug
+      dbQueryAll.mockResolvedValueOnce([
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          title: 'Xolvon Platform',
+          slug: 'xolvon-platform',
+          type: 'SaaS',
+          summary: 'The platform itself.',
+          status: 'published',
+        },
+      ]); // related projects via project_members
+
+      const res = await request(app.getHttpServer())
+        .get('/api/collective/collective-member')
+        .expect(200);
+
+      expect(res.body).toMatchObject({
+        slug: 'collective-member',
+        name: 'Collective Member',
+      });
+      expect(res.body.relatedProjects).toEqual([
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          title: 'Xolvon Platform',
+          slug: 'xolvon-platform',
+          type: 'SaaS',
+          summary: 'The platform itself.',
+          status: 'published',
+        },
+      ]);
+
+      // Privacy proof on the detail surface too.
+      expect(res.body).not.toHaveProperty('email');
+      expect(res.body).not.toHaveProperty('phone');
+      const serialized = JSON.stringify(res.body);
+      expect(serialized).not.toContain('private.member@example.com');
+      expect(serialized).not.toContain('+628999888777');
+    });
+
+    it('GET /api/collective/:slug returns 404 for an unknown slug', async () => {
+      dbQueryOne.mockResolvedValueOnce(undefined);
+
+      await request(app.getHttpServer())
+        .get('/api/collective/ghost')
+        .expect(404);
+    });
+
+    it('admin mutations require authentication and admin role', async () => {
+      await request(app.getHttpServer())
+        .post('/api/collective')
+        .send({ name: 'X', slug: 'x', role: 'FE', skills: ['React'] })
+        .expect(401);
+
+      const userToken = await signToken({
+        sub: 'user-uuid-1',
+        email: 'e2e.user@example.com',
+        role: 'user',
+      });
+      await request(app.getHttpServer())
+        .post('/api/collective')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ name: 'X', slug: 'x', role: 'FE', skills: ['React'] })
+        .expect(403);
+      expectDbUnused();
+    });
+
+    it('POST /api/collective creates a draft member and writes an audit row (admin)', async () => {
+      dbQueryOne.mockResolvedValueOnce(undefined); // slug uniqueness
+      dbQueryOne.mockResolvedValueOnce({
+        ...memberRowWithContacts,
+        id: '33333333-3333-4333-8333-333333333333',
+        slug: 'new-member',
+        status: 'draft',
+      }); // re-read after insert
+
+      const adminToken = await signToken({
+        sub: 'admin-uuid-1',
+        email: 'admin@example.com',
+        role: 'admin',
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/collective')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          name: 'New Member',
+          slug: 'new-member',
+          role: 'Data Engineer',
+          skills: ['SQL', 'Python'],
+          socialLinks: [
+            { platform: 'LinkedIn', url: 'https://linkedin.com/in/new' },
+          ],
+        })
+        .expect(201);
+
+      expect(res.body).toMatchObject({
+        slug: 'new-member',
+        status: 'draft',
+      });
+      expect(res.body).not.toHaveProperty('email');
+      expect(res.body).not.toHaveProperty('phone');
+
+      const insertCalls = dbExecute.mock.calls;
+      expect(insertCalls).toHaveLength(2);
+      expect(insertCalls[0][0]).toContain('INSERT INTO collective_members');
+      expect(insertCalls[1][0]).toContain('INSERT INTO admin_audit_logs');
+    });
+  });
+
   describe('order verification (status pending → paid only)', () => {
     const adminToken = () =>
       signToken({
@@ -521,6 +688,216 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
         'Bukti pembayaran hanya dapat diunggah untuk order yang berstatus pending.',
       );
       expect(dbExecute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('marketplace showcase (public catalog + admin CRUD)', () => {
+    const adminToken = () =>
+      signToken({
+        sub: 'admin-uuid-1',
+        email: 'admin@example.com',
+        role: 'admin',
+      });
+
+    const userToken = () =>
+      signToken({
+        sub: 'user-uuid-1',
+        email: 'e2e.user@example.com',
+        role: 'user',
+      });
+
+    const itemId = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+    const draftRow = {
+      id: itemId,
+      title: 'Draft SaaS',
+      slug: 'draft-saas',
+      description: 'Not ready',
+      capabilities: null,
+      external_url: 'https://draft.example.com',
+      status: 'draft',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    it('GET /api/marketplace returns published-only items with parsed capabilities (SCHEMA §59)', async () => {
+      dbQueryAll.mockResolvedValueOnce([
+        {
+          ...draftRow,
+          id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+          slug: 'invoice-saas',
+          title: 'Invoice SaaS',
+          description: 'Billing for freelancers',
+          capabilities: 'Invoicing,Taxes,Reports',
+          status: 'published',
+        },
+        {
+          ...draftRow,
+          id: '9b2f8f9e-2c30-4c1a-8b3c-9c1f2f3f4f5f',
+          slug: 'crm-saas',
+          title: 'CRM SaaS',
+          capabilities: null,
+          status: 'published',
+        },
+      ]);
+      dbQueryOne.mockResolvedValueOnce({ total: 2 });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/marketplace')
+        .expect(200);
+
+      expect(res.body).toMatchObject({ page: 1, limit: 20, total: 2 });
+      expect(res.body.items).toHaveLength(2);
+      expect(res.body.items[0]).toEqual({
+        id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+        title: 'Invoice SaaS',
+        slug: 'invoice-saas',
+        description: 'Billing for freelancers',
+        capabilities: ['Invoicing', 'Taxes', 'Reports'],
+        externalUrl: 'https://draft.example.com',
+        status: 'published',
+      });
+      expect(res.body.items[1].capabilities).toEqual([]);
+
+      const [listSql] = dbQueryAll.mock.calls[0];
+      expect(listSql).toContain("status = 'published'");
+    });
+
+    it('GET /api/marketplace/:slug returns the detail with media sorted by sort_order', async () => {
+      dbQueryOne.mockResolvedValueOnce({
+        ...draftRow,
+        slug: 'invoice-saas',
+        status: 'published',
+      });
+      dbQueryAll.mockResolvedValueOnce([
+        {
+          id: 'media-1',
+          marketplace_id: itemId,
+          object_key: 'marketplace/shot.png',
+          media_type: 'image',
+          sort_order: 1,
+        },
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/marketplace/invoice-saas')
+        .expect(200);
+
+      expect(res.body).toMatchObject({
+        slug: 'invoice-saas',
+        status: 'published',
+        externalUrl: 'https://draft.example.com',
+      });
+      expect(res.body.media).toEqual([
+        {
+          id: 'media-1',
+          objectKey: 'marketplace/shot.png',
+          mediaType: 'image',
+          sortOrder: 1,
+        },
+      ]);
+    });
+
+    it('GET /api/marketplace/:slug returns 404 for a draft item', async () => {
+      dbQueryOne.mockResolvedValueOnce(draftRow);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/marketplace/draft-saas')
+        .expect(404);
+
+      expect(res.body.message).toBe('Item marketplace tidak ditemukan.');
+    });
+
+    it('rejects create from a non-admin with 403', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/marketplace')
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .send({
+          title: 'Some SaaS',
+          slug: 'some-saas',
+          externalUrl: 'https://some.example.com',
+        })
+        .expect(403);
+
+      expect(res.body.message).toBe(
+        'You do not have permission to access this resource.',
+      );
+      expectDbUnused();
+    });
+
+    it('rejects create without authentication with 401', async () => {
+      await request(app.getHttpServer())
+        .post('/api/marketplace')
+        .send({
+          title: 'Some SaaS',
+          slug: 'some-saas',
+          externalUrl: 'https://some.example.com',
+        })
+        .expect(401);
+      expectDbUnused();
+    });
+
+    it('rejects an http external_url with 400 (redirection security)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/marketplace')
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({
+          title: 'Some SaaS',
+          slug: 'some-saas',
+          externalUrl: 'http://some.example.com',
+        })
+        .expect(400);
+
+      expect(res.body.message).toBe(
+        'external_url harus menggunakan protokol https.',
+      );
+      expect(dbExecute).not.toHaveBeenCalled();
+    });
+
+    it('creates a draft listing as admin and audits the create action', async () => {
+      dbQueryOne.mockResolvedValueOnce(undefined); // slug available
+
+      const res = await request(app.getHttpServer())
+        .post('/api/marketplace')
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({
+          title: 'Invoice SaaS',
+          slug: 'invoice-saas',
+          description: 'Billing for freelancers',
+          externalUrl: 'https://invoice.example.com',
+          capabilities: ['Invoicing', 'Taxes'],
+        })
+        .expect(201);
+
+      expect(res.body).toMatchObject({
+        title: 'Invoice SaaS',
+        slug: 'invoice-saas',
+        externalUrl: 'https://invoice.example.com',
+        capabilities: ['Invoicing', 'Taxes'],
+        status: 'draft',
+      });
+
+      const [itemSql, itemParams] = dbExecute.mock.calls[0];
+      expect(itemSql).toContain('INSERT INTO marketplace_items');
+      expect(itemParams).toContain('Invoicing,Taxes');
+
+      const [auditSql] = dbExecute.mock.calls[1];
+      expect(auditSql).toContain('INSERT INTO admin_audit_logs');
+    });
+
+    it('publishes a draft listing and audits the publish action', async () => {
+      dbQueryOne.mockResolvedValueOnce(draftRow);
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/marketplace/${itemId}/publish`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .expect(200);
+
+      expect(res.body).toMatchObject({ id: itemId, status: 'published' });
+
+      const [updateSql] = dbExecute.mock.calls[0];
+      expect(updateSql).toContain("UPDATE marketplace_items SET status = 'published'");
+      const [auditSql] = dbExecute.mock.calls[1];
+      expect(auditSql).toContain('INSERT INTO admin_audit_logs');
     });
   });
 });

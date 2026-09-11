@@ -49,6 +49,17 @@ disempurnakan penuh di T16 (`.omo/plans/xolvon-backend-build.md`).
 |---|---|---|---|---|---|---|---|
 | GET | `/api` | Public | - | aktif | Health check / hello | - | `string` (200) |
 
+### Collective (`src/collective/collective.controller.ts`)
+
+| Method | Path | Auth | Role | Status | Deskripsi | Request | Response |
+|---|---|---|---|---|---|---|---|
+| GET | `/api/collective` | Public | - | aktif | Member published-only, `?q=` (LIKE name/role/skills), pagination DL-011, urut `display_order` ASC lalu `created_at` DESC | - | `PaginatedCollectiveResponseDto {items, page, limit, total}` (200) |
+| GET | `/api/collective/:slug` | Public | - | aktif | Detail member + `relatedProjects` via `project_members` (published); TIDAK pernah memuat email/telepon (SCHEMA.md §57) | - | `CollectiveMemberDetailDto` (200) / 404 |
+| POST | `/api/collective` | Bearer JWT | admin | aktif | Buat member (status awal `draft`) + audit `create` | `CreateCollectiveMemberDto` | `CollectiveMemberResponseDto` (201) |
+| PATCH | `/api/collective/:id` | Bearer JWT | admin | aktif | Ubah member + audit `update` | `UpdateCollectiveMemberDto` | `CollectiveMemberResponseDto` (200) |
+| POST | `/api/collective/:id/publish` | Bearer JWT | admin | aktif | Set status `published` + audit `publish` | - | `CollectiveMemberResponseDto` (200) |
+| POST | `/api/collective/:id/unpublish` | Bearer JWT | admin | aktif | Set status `draft` + audit `unpublish` | - | `CollectiveMemberResponseDto` (200) |
+
 ### Admin — belum ada
 
 `AdminModule` berupa stub tanpa endpoint. Endpoint admin (`GET /admin/users`,
@@ -84,12 +95,11 @@ Belum ada endpoint. Portfolio published-only + search/filter; detail
 Problem→Solution→Tech Stack→Result→Screenshot + "Built by"; admin CRUD/attach/
 detach/assign + audit.
 
-### Collective — planned (T8)
+### Collective — aktif (T8)
 
-| Method | Path | Auth | Role | Deskripsi |
-|---|---|---|---|---|
-| GET | `/api/collective` | Public | - | Daftar member published-only |
-| GET | `/api/collective/:slug` | Public | - | Detail member tanpa email/telepon + project terkait dua arah |
+Endpoint sudah pindah ke tabel aktif di atas. `skills` disimpan comma-separated
+TEXT dan `social_links` sebagai JSON array TEXT (SCHEMA.md §56); keduanya
+diparse di mapper menjadi `string[]` / `SocialLink[]` yang tidak pernah null.
 
 ### Marketplace & Marketplace Media — planned (T9)
 
