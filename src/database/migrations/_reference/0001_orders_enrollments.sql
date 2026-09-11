@@ -7,6 +7,9 @@
 -- Dokumen ini adalah REFERENSI / DOKUMENTASI SCHEMA saja.
 -- JANGAN dijalankan langsung ke instance D1 aktif tanpa koordinasi
 -- dengan Database Engineer (Schema V2 dipegang oleh tim Database).
+-- SUPERSEDED: berkas ini dipindah ke _reference/ dan TIDAK dijalankan runner.
+-- CHECK status orders masih memuat legacy 'awaiting_verification' yang sudah
+-- dihapus pada Schema V2 — lihat ../0002_orders_items_proofs.sql untuk DDL final.
 -- =============================================================================
 
 -- 1. Orders table
