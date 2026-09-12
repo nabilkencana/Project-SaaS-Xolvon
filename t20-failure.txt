@@ -1,0 +1,20 @@
+T20 failure-path evidence
+Status: BLOCKED
+
+The failure checklist could not be exercised against a live staging endpoint
+because the deployment prerequisite gate failed before any deployment action.
+
+Blocking prerequisites:
+- No verifiable staging or production deployment target identity.
+- No deployment provider executable/configuration for the NestJS Node/Express service.
+- No staging or production HTTPS domain.
+- No separate environment-specific staging/production secret stores.
+- No pre-migration backup/rollback target or live log stream.
+
+No production-first action, migration, destructive SQL, live account creation,
+or external request was run. No failure response is represented as a live
+application result. Existing local QA remains local-only and is not T20 live
+evidence.
+
+No credential values, tokens, JWT secrets, R2 secrets, signed URLs, or false
+success results are recorded.
