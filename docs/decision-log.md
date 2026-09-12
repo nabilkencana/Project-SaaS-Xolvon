@@ -1105,3 +1105,93 @@ from history via `git show e91dc97^:<path>`.
   origin, so bootstrapping is unaffected) but is documented in none of the
   four example files. Owner/docs task should add it to `.env.staging.example`
   and `.env.production.example` alongside the DL-027 final-origin decision.
+
+## Dependency vulnerability management (T13)
+
+### DL-030 — Dependabot + npm audit as the scanning approach; 4 residual HIGHs are owner decisions
+
+```text
+Problem:
+T2/T13 `npm audit --json` (2026-09-12, evidence
+`.omo/notepads/xolvon-addendum-hardening-docs/evidence/t13-audit-before.json`)
+reports 0 critical, 4 high, 1 moderate, 2 low. `npm audit fix` (non-breaking,
+no `--force`) is a verified no-op: it exits 1 with the identical 7 findings and
+produces an empty git diff on package.json/package-lock.json — every fix is
+either unavailable or semver-major/breaking, so no safe automated remediation
+exists today. Per the addendum rule "no paid scanner without owner decision"
+(DL-023), the recurring-scan mechanism must be chosen and the unfixable HIGHs
+must be recorded, not silently left open.
+
+Existing Requirement:
+DL-023 (scanner choice was OPEN, paid vendor requires owner approval); plan T13
+(`.omo/plans/xolvon-addendum-hardening-docs.md`); addendum §1.5.
+
+Options:
+(a) Paid scanner vendor — rejected, requires owner approval per DL-023.
+(b) Dependabot (free, repository-native, GitHub-hosted) — selected.
+(c) Manual periodic `npm audit` only — no continuous coverage.
+
+Decision:
+1. Scanning approach: GitHub Dependabot via `.github/dependabot.yml` — weekly
+   npm version updates (mon 07:00 Asia/Jakarta, minor+patch grouped,
+   open-pull-requests-limit: 5, commit-message prefix `chore` to match repo
+   style) plus the github-actions ecosystem. npm audit remains the local gate
+   (`npm audit --json` in final verification). No paid scanner/vendor was added.
+   Enabling Dependabot security updates in repository settings is an owner/repo
+   admin action (GitHub UI), noted here as the activation dependency.
+2. Residual HIGH advisories — owner decisions, deliberately NOT auto-fixed
+   (all fixes are breaking or nonexistent; forcing them would violate the
+   no-break-the-build rule and this repo does not touch app source for audit):
+
+   - multer <=2.2.0 [HIGH] (4 advisories incl. GHSA-wc9g-mqfw-jrwm DoS via
+     crafted multipart field names; GHSA-qfvm-cv95-jqjf fd-leak DoS;
+     GHSA-535w-7cp7-47q4 oversized-array-index DoS; GHSA-qvfw-j98x-7q72 size
+     -limit bypass [low-severity sub-advisory]) pulled in by
+     @nestjs/platform-express@12.0.1. fixAvailable=false: the newest
+     @nestjs/platform-express (12.0.1) still pins multer@2.2.0 and multer@2.3.0
+     (the fixed line) is not consumed by any platform-express release. Why not
+     auto-fixed: would require either waiting for an upstream NestJS patch or
+     adding a package.json "overrides" entry for multer@^2.3.0 — an unaudited
+     manifest change outside this task's permitted remediation set.
+     Owner options: add `overrides: {"multer": "^2.3.0"}` after validating the
+     upload paths (admin media upload, payment-proof), or wait for
+     @nestjs/platform-express to ship the bump. Mitigating facts: multer is
+     only reached through Nest platform-express multipart routes; core app
+     uploads flow through presigned R2 URLs, not multipart bodies.
+
+   - @nestjs/platform-express * [HIGH] — same finding surfaced on the direct
+     dependency (via: multer). Same owner decision as above.
+
+   - undici <=6.27.0 [HIGH] (15 advisories incl. GHSA-f269-vfmq-vjvj WebSocket
+     length overflow crash; GHSA-vrm6-8vpv-qv8q unbounded memory;
+     GHSA-v9p9-hfj2-hcw8 unhandled exception; GHSA-vxpw-j846-p89q fragment DoS)
+     and tmp <=0.2.5 [HIGH] (GHSA-ph9p-34f9-6g65 path traversal;
+     GHSA-52f5-9888-hmc6 symlink write), plus @nestjs/mau * [MODERATE] and the
+     two linked LOWs (inquirer 3.0.0-8.2.6||9.0.0-9.3.7 via external-editor;
+     external-editor >=1.1.1 via tmp): ALL reachable only through the
+     devDependency @nestjs/mau@0.2.6 (chain: @nestjs/mau -> ... -> undici;
+     @nestjs/mau -> inquirer -> external-editor -> tmp). The only fix npm
+     offers is @nestjs/mau@0.0.6 marked isSemVerMajor:true — a downgrade to a
+     much older artifact, breaking, and 0.0.6 does not even appear in the
+     package's published version list. Why not auto-fixed: major/breaking,
+     explicitly out of safe scope. Owner options (recommended): verify
+     @nestjs/mau is genuinely unused (grep of src/test/scripts/nest-cli.json
+     finds ZERO references — it appears to be leftover Nest CLI tooling) and
+     `npm uninstall @nestjs/mau`, which closes 1 moderate + 2 high + 2 low in
+     one step with no runtime impact; or pin and accept, since all four
+     dev-only packages never ship in `dist/` and are not reachable in the
+     production runtime (npm-start path is `node dist/main` with no inquirer/
+     tmp/undici imports from app code).
+
+Date:
+2026-09-12
+
+Impact:
+Continuous dependency scanning lands without any paid vendor (DL-023 closed:
+Dependabot selected). Gates stay green untouched by dependency churn
+(package.json/package-lock.json unchanged this task). The 4 HIGH + 1 MODERATE +
+2 LOW residuals become explicit, dated owner decisions with concrete paths
+instead of audit noise; production runtime is dev-only-surface for 6 of the 7
+findings, and the multer pair depends on an upstream NestJS release or a
+reviewed overrides entry.
+```

@@ -1,0 +1,43 @@
+# Dependency update automation for the Xolvon backend (be-xolvon).
+#
+# Chosen scanning/updating approach per docs/decision-log.md DL-023/DL-030:
+# GitHub Dependabot (free, repository-native) plus local `npm audit`.
+# No paid vulnerability scanner/vendor is integrated.
+#
+# Dependabot opens version-update PRs on a weekly cadence. Security-update
+# alerts and security PRs are a repository setting (Settings -> Code security
+# and analysis -> Dependabot) and are not controlled by this file.
+version: 2
+updates:
+  # Runtime and dev dependencies (package.json / package-lock.json at root).
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Asia/Jakarta"
+    # Keep the review queue small; security updates still bypass this limit.
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      # Collapse routine same-ecosystem bumps into one PR per group.
+      npm-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions workflow action pins (.github/workflows/*).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Asia/Jakarta"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
