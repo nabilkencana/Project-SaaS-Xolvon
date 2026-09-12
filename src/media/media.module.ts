@@ -10,5 +10,6 @@ import { STORAGE_PORT } from './storage.port';
 @Module({
   imports: [ConfigModule, AuthModule], controllers: [MediaController], providers: [MediaService, LocalTestStorageService,
     { provide: STORAGE_PORT, inject: [ConfigService, LocalTestStorageService], useFactory: (config: ConfigService, local: LocalTestStorageService) => config.get('STORAGE_DRIVER') === 'r2' ? new R2StorageService(config) : local },],
+  exports: [STORAGE_PORT],
 })
 export class MediaModule {}

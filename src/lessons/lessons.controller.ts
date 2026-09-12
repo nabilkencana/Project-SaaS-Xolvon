@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -27,6 +28,16 @@ import type { LessonAdminDto } from './dto/lesson-response.dto';
 @Controller('lessons')
 export class LessonsController {
   constructor(private readonly lessonsService: LessonsService) {}
+
+  @UseGuards(AuthGuard)
+  @Get(':id/video-url')
+  @HttpCode(HttpStatus.OK)
+  async videoUrl(
+    @CurrentUser('sub') userId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<{ url: string; expiresAt: string }> {
+    return this.lessonsService.getVideoUrl(userId, id);
+  }
 
   /** Admin: partial update + audit `update`. */
   @UseGuards(AuthGuard, RolesGuard)

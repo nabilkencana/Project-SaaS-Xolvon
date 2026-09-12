@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module';
 import { AuthModule } from '../auth/auth.module';
 import { AuditModule } from '../audit/audit.module';
+import { MediaModule } from '../media/media.module';
 import { LessonsController } from './lessons.controller';
 import { CourseLessonsController } from './course-lessons.controller';
 import { LessonsService } from './lessons.service';
@@ -12,7 +13,7 @@ import { LessonsService } from './lessons.service';
  * The signed URL flow (T14) builds on the lessons entity.
  */
 @Module({
-  imports: [DatabaseModule, AuthModule, AuditModule],
+  imports: [DatabaseModule, AuthModule, AuditModule, MediaModule],
   controllers: [LessonsController, CourseLessonsController],
   providers: [LessonsService],
   exports: [LessonsService],

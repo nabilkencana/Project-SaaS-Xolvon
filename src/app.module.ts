@@ -21,6 +21,7 @@ import { CourseResourcesModule } from './course-resources/course-resources.modul
 import { AdminModule } from './admin/admin.module';
 import { validateEnvironment } from './config/env.validation';
 import { MediaModule } from './media/media.module';
+import { ProgressModule } from './progress/progress.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { MediaModule } from './media/media.module';
     CourseResourcesModule,
     AdminModule,
     MediaModule,
+    ProgressModule,
   ],
   controllers: [AppController],
   providers: [

@@ -1,11 +1,14 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../database/database.service';
 import { AuditService } from '../audit/audit.service';
+import { Inject } from '@nestjs/common';
+import { STORAGE_PORT, type StoragePort } from '../media/storage.port';
 import type { CourseExistsRow, LessonRow } from './interfaces/lesson.interface';
 import type { CreateLessonDto } from './dto/create-lesson.dto';
 import type { UpdateLessonDto } from './dto/update-lesson.dto';
@@ -28,7 +31,31 @@ export class LessonsService {
   constructor(
     private readonly db: DatabaseService,
     private readonly audit: AuditService,
+    @Inject(STORAGE_PORT) private readonly storage?: StoragePort,
   ) {}
+
+  async getVideoUrl(userId: string, lessonId: string): Promise<{ url: string; expiresAt: string }> {
+    const lesson = await this.db.queryOne<Pick<LessonRow, 'id' | 'course_id' | 'video_object_key'>>(
+      'SELECT id, course_id, video_object_key FROM lessons WHERE id = ? LIMIT 1;',
+      [lessonId],
+    );
+    if (!lesson) throw new NotFoundException('Lesson tidak ditemukan.');
+    if (!lesson.video_object_key) throw new NotFoundException('Video lesson tidak ditemukan.');
+    const now = new Date().toISOString();
+    const enrollment = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM enrollments
+       WHERE user_id = ? AND course_id = ? AND status = 'active'
+         AND (expires_at IS NULL OR expires_at > ?)
+       LIMIT 1;`,
+      [userId, lesson.course_id, now],
+    );
+    if (!enrollment) throw new ForbiddenException('Enrollment aktif diperlukan.');
+    if (!this.storage) throw new Error('Storage provider is not configured.');
+    return {
+      url: await this.storage.createReadUrl(lesson.video_object_key, 300),
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+    };
+  }
 
   /**
    * Public: published lessons of a published course, ordered by

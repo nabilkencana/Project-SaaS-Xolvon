@@ -6,6 +6,7 @@ import type { LessonRow } from './interfaces/lesson.interface';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { ReorderLessonDto } from './dto/reorder-lesson.dto';
+import type { StoragePort } from '../media/storage.port';
 
 function makeLessonRow(overrides: Partial<LessonRow> = {}): LessonRow {
   return {
@@ -34,6 +35,7 @@ describe('LessonsService', () => {
   let service: LessonsService;
   let mockDb: { queryAll: jest.Mock; queryOne: jest.Mock; execute: jest.Mock };
   let mockAudit: { record: jest.Mock };
+  let mockStorage: { createReadUrl: jest.Mock };
 
   beforeEach(() => {
     mockDb = {
@@ -42,11 +44,34 @@ describe('LessonsService', () => {
       execute: jest.fn(),
     };
     mockAudit = { record: jest.fn().mockResolvedValue(undefined) };
+    mockStorage = { createReadUrl: jest.fn().mockResolvedValue('https://signed.test/video') };
 
     service = new LessonsService(
       mockDb as unknown as DatabaseService,
       mockAudit as unknown as AuditService,
+      mockStorage as unknown as StoragePort,
     );
+  });
+
+  it('returns a signed video URL only for an active enrollment owned by the lesson course', async () => {
+    mockDb.queryOne
+      .mockResolvedValueOnce({ id: 'lesson-1', course_id: 'course-1', video_object_key: 'courses/secret.mp4' })
+      .mockResolvedValueOnce({ id: 'enrollment-1' });
+
+    const result = await service.getVideoUrl('user-1', 'lesson-1');
+
+    expect(result.url).toBe('https://signed.test/video');
+    expect(new Date(result.expiresAt).getTime()).toBeGreaterThan(Date.now());
+    expect(mockStorage.createReadUrl).toHaveBeenCalledWith('courses/secret.mp4', 300);
+  });
+
+  it('rejects a missing enrollment before signing a URL', async () => {
+    mockDb.queryOne
+      .mockResolvedValueOnce({ id: 'lesson-1', course_id: 'course-1', video_object_key: 'courses/secret.mp4' })
+      .mockResolvedValueOnce(undefined);
+
+    await expect(service.getVideoUrl('user-1', 'lesson-1')).rejects.toMatchObject({ getStatus: expect.any(Function) });
+    expect(mockStorage.createReadUrl).not.toHaveBeenCalled();
   });
 
   describe('listPublishedByCourseSlug', () => {
