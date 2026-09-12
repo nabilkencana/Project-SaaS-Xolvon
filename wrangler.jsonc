@@ -1,0 +1,13 @@
+{
+  "$schema": "https://developers.cloudflare.com/workers/wrangler/configuration/schema.json",
+  "name": "xolvon",
+  "compatibility_date": "2026-09-12",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "xolvon-course-db",
+      "database_id": "bef1c7f4-5cfc-42cf-b715-47f0eae1c3fb",
+      "migrations_dir": "src/database/migrations"
+    }
+  ]
+}

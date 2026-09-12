@@ -1,23 +1,36 @@
-# compiled output
+# compiled output & dependencies
 /dist
 /node_modules
 /build
+out/
+
+# TypeScript build info cache
+*.tsbuildinfo
+tsconfig.build.tsbuildinfo
 
 # Logs
 logs
 *.log
 npm-debug.log*
-pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 lerna-debug.log*
 
-# OS
+# OS files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# Tests
+# Tests & Coverage
 /coverage
 /.nyc_output
+test-results/
+*.lcov
 
 # IDEs and editors
 /.idea
@@ -37,20 +50,29 @@ lerna-debug.log*
 
 # dotenv environment variable files
 .env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
+.env.*
+!.env.example
+!.env.*.example
 
 # temp directory
 .temp
 .tmp
+tmp/
+
+# Cloudflare & Wrangler local state
+.wrangler/
 
 # Local SQLite database (DB_DRIVER=sqlite)
 local.db
 local.db-journal
 local.db-wal
 local.db-shm
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
 
 # Runtime data
 pids
@@ -61,11 +83,14 @@ pids
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
-# Omo
+# AI Assistant, agent cache, and scratch artifacts
 /.omo
-
-# Test
-/test/*
+.codegraph
+DoneClaim
+evidence-*.txt
+learning-*.md
+t[0-9]*-*.txt
+t[0-9]*-*.md
 
 # Documentation build scratch files; generated PDFs are committed artifacts.
 docs/pdf/.tmp/
