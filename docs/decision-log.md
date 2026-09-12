@@ -509,6 +509,15 @@ dedikasi, wajib lewat entri decision log baru + perubahan skema eksplisit
 
 ---
 
+### DL-015 implementation note — T12 admin proof surface
+
+T12 implements the locked DL-015 decision without adding a WhatsApp/proof field
+to the admin response. `GET /api/admin/orders` exposes derived activation state
+and safe order/user fields only; payment proof references remain owned by the
+existing `payment_proofs` flow, while WhatsApp remains static public contact
+copy. Any dedicated transaction reference requires a new owner decision and
+schema change.
+
 ### DL-016 — Implementasi rate limit auth dengan @nestjs/throttler
 
 ```text
