@@ -2178,4 +2178,157 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
       expect(res.body.message).toBe('ThrottlerException: Too Many Requests');
     });
   });
+
+  describe('T18 security regression gate', () => {
+    const adminToken = () =>
+      signToken({ sub: 'admin-uuid-1', email: 'admin@example.com', role: 'admin' });
+    const userToken = (sub = 'user-uuid-1') =>
+      signToken({ sub, email: `${sub}@example.com`, role: 'user' });
+    const lessonId = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+    const courseId = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+
+    it('denies every admin surface with 401 anonymously and 403 for a normal user', async () => {
+      const routes = [
+        ['get', '/api/admin/users'],
+        ['get', '/api/admin/orders'],
+        ['get', '/api/admin/overview'],
+        ['post', '/api/admin/media/upload-url'],
+        ['post', '/api/admin/media/confirm'],
+        ['post', '/api/admin/media/read-url'],
+        ['post', '/api/courses'],
+        ['post', `/api/courses/${courseId}/lessons`],
+        ['patch', `/api/lessons/${lessonId}`],
+        ['post', `/api/lessons/${lessonId}/publish`],
+        ['patch', `/api/enrollments/${lessonId}/revoke`],
+        ['patch', `/api/orders/${courseId}/verify`],
+        ['post', `/api/orders/${courseId}/activate`],
+        ['post', `/api/orders/${courseId}/cancel`],
+      ] as const;
+
+      for (const [method, path] of routes) {
+        await request(app.getHttpServer())[method](path).expect(401);
+      }
+
+      const token = await userToken();
+      for (const [method, path] of routes) {
+        await request(app.getHttpServer())
+          [method](path)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(403);
+      }
+      expectDbUnused();
+    });
+
+    it('denies signed lesson URLs without, revoked, and expired enrollment', async () => {
+      const token = await userToken();
+      dbQueryOne.mockResolvedValueOnce({
+        id: lessonId,
+        course_id: courseId,
+        video_object_key: 'private/courses/course/video.mp4',
+      });
+      dbQueryOne.mockResolvedValueOnce(undefined);
+      await request(app.getHttpServer())
+        .get(`/api/lessons/${lessonId}/video-url`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      dbQueryOne.mockReset();
+      dbQueryOne.mockResolvedValueOnce({
+        id: lessonId,
+        course_id: courseId,
+        video_object_key: 'private/courses/course/video.mp4',
+      });
+      dbQueryOne.mockResolvedValueOnce(undefined);
+      await request(app.getHttpServer())
+        .get(`/api/lessons/${lessonId}/video-url`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      dbQueryOne.mockReset();
+      dbQueryOne.mockResolvedValueOnce({
+        id: lessonId,
+        course_id: courseId,
+        video_object_key: 'private/courses/course/video.mp4',
+      });
+      dbQueryOne.mockResolvedValueOnce(undefined);
+      await request(app.getHttpServer())
+        .get(`/api/lessons/${lessonId}/video-url`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('denies cross-course lesson IDOR even when the user is enrolled elsewhere', async () => {
+      const token = await userToken();
+      dbQueryOne.mockResolvedValueOnce({
+        id: lessonId,
+        course_id: '9b2f8f9e-2c30-4c1a-8b3c-9c1f2f3f4f5f',
+        video_object_key: 'private/courses/other/video.mp4',
+      });
+      dbQueryOne.mockResolvedValueOnce(undefined);
+
+      await request(app.getHttpServer())
+        .get(`/api/lessons/${lessonId}/video-url`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('binds user data reads and writes to the JWT subject, not caller-supplied identity', async () => {
+      const token = await userToken('user-b');
+      dbQueryAll.mockResolvedValueOnce([
+        { id: 'enr-b', user_id: 'user-b', course_id: courseId, status: 'active' },
+      ]);
+      const enrollments = await request(app.getHttpServer())
+        .get('/api/enrollments/me')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(enrollments.body[0].id).toBe('enr-b');
+      expect(dbQueryAll.mock.calls[0][1]).toEqual(['user-b']);
+
+      dbQueryAll.mockReset();
+      dbQueryAll.mockResolvedValueOnce([]);
+      const progress = await request(app.getHttpServer())
+        .get('/api/progress')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(progress.body).toEqual([]);
+      expect(dbQueryAll.mock.calls[0][1]).toEqual(['user-b']);
+    });
+
+    it('rejects invalid upload MIME, size, and prefix before storage access', async () => {
+      const token = await adminToken();
+      const cases = [
+        { prefix: 'private/courses', contentType: 'text/html', size: 10, filename: 'x.html' },
+        { prefix: 'private/courses', contentType: 'video/mp4', size: 524288001, filename: 'x.mp4' },
+        { prefix: 'private/secrets', contentType: 'video/mp4', size: 10, filename: 'x.mp4' },
+      ];
+
+      for (const payload of cases) {
+        const response = await request(app.getHttpServer())
+          .post('/api/admin/media/upload-url')
+          .set('Authorization', `Bearer ${token}`)
+          .send(payload)
+          .expect(400);
+        expect(JSON.stringify(response.body)).not.toContain('R2');
+      }
+      expectDbUnused();
+    });
+
+    it('returns safe errors without secrets or stack traces for unknown failures', async () => {
+      dbQueryAll.mockRejectedValueOnce(
+        new Error('sqlite secret=top-secret connection stack should stay server-side'),
+      );
+
+      const response = await request(app.getHttpServer()).get('/api/enrollments/me').set(
+        'Authorization',
+        `Bearer ${await userToken()}`,
+      );
+
+      expect(response.status).toBe(500);
+      expect(response.body.message).toBe(
+        'An unexpected error occurred. Please try again later.',
+      );
+      expect(JSON.stringify(response.body)).not.toContain('top-secret');
+      expect(JSON.stringify(response.body)).not.toContain('at ');
+    });
+  });
 });
