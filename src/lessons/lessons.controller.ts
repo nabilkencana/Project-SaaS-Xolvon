@@ -11,6 +11,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -19,6 +20,7 @@ import { LessonsService } from './lessons.service';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { ReorderLessonDto } from './dto/reorder-lesson.dto';
 import type { LessonAdminDto } from './dto/lesson-response.dto';
+import { SIGNED_THROTTLE } from '../config/throttle.config';
 
 /**
  * Lesson management (plan T6, SCHEMA.md §18-23). All routes are admin-only
@@ -30,6 +32,7 @@ export class LessonsController {
   constructor(private readonly lessonsService: LessonsService) {}
 
   @UseGuards(AuthGuard)
+  @Throttle(SIGNED_THROTTLE)
   @Get(':id/video-url')
   @HttpCode(HttpStatus.OK)
   async videoUrl(

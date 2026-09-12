@@ -5,6 +5,7 @@ import { JwtService } from '@nestjs/jwt';
 import { getOptionsToken } from '@nestjs/throttler';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from '../src/app.module';
 import { DatabaseService } from '../src/database/database.service';
 import { PasswordService } from '../src/auth/password.service';
@@ -2396,7 +2397,7 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
   });
 
   describe('T6 named throttle groups (per-surface 429 limits)', () => {
-    let groupApp: INestApplication<App>;
+    let groupApp: NestExpressApplication;
     const lessonId = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 
     // Dedicated app instance: the in-memory throttler storage is per-app, so
@@ -2421,7 +2422,7 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
         })
         .compile();
 
-      groupApp = moduleFixture.createNestApplication();
+      groupApp = moduleFixture.createNestApplication<NestExpressApplication>();
       groupApp.setGlobalPrefix('api');
       groupApp.useGlobalPipes(
         new ValidationPipe({
@@ -2551,8 +2552,9 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
       // Sibling order routes are NOT part of the order group: verify keeps
       // the historical 100/min default.
       const sibling = await request(groupApp.getHttpServer())
-        .post(`/api/orders/0b9e6b5e-1111-4222-8333-444455556666/verify`)
+        .patch(`/api/orders/0b9e6b5e-1111-4222-8333-444455556666/verify`)
         .set('X-Forwarded-For', '203.0.113.17');
+      expect(sibling.status).toBe(401);
       expect(sibling.headers['x-ratelimit-limit-order']).toBe('100');
     });
 

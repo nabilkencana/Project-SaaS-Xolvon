@@ -11,6 +11,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Public } from '../auth/decorators/public.decorator';
@@ -20,6 +21,7 @@ import { CoursesService } from './courses.service';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
 import { ListCoursesQueryDto } from './dto/list-courses-query.dto';
+import { CATALOG_THROTTLE } from '../config/throttle.config';
 import type { CourseCardDto, CourseDetailDto } from './dto/course-response.dto';
 
 /**
@@ -33,6 +35,7 @@ export class CoursesController {
 
   /** Public: published courses with ?q=, ?sort=, and DL-011 pagination. */
   @Public()
+  @Throttle(CATALOG_THROTTLE)
   @Get()
   async listPublished(
     @Query() query: ListCoursesQueryDto,

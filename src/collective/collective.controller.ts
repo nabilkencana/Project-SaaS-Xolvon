@@ -11,12 +11,14 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CollectiveService } from './collective.service';
 import { CollectiveListQueryDto } from './dto/collective-list-query.dto';
+import { CATALOG_THROTTLE } from '../config/throttle.config';
 import { CreateCollectiveMemberDto } from './dto/create-collective-member.dto';
 import { UpdateCollectiveMemberDto } from './dto/update-collective-member.dto';
 import type {
@@ -34,6 +36,7 @@ export class CollectiveController {
    * carousel (display_order ASC, created_at DESC). Never exposes
    * email/phone (SCHEMA.md §57).
    */
+  @Throttle(CATALOG_THROTTLE)
   @Get()
   async listPublished(
     @Query() query: CollectiveListQueryDto,

@@ -1,5 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { HomeResponseDTO } from './home.dto';
+import { CATALOG_THROTTLE } from '../config/throttle.config';
 import { HomeService } from './home.service';
 
 /**
@@ -11,6 +13,7 @@ import { HomeService } from './home.service';
 export class HomeController {
   constructor(private readonly homeService: HomeService) {}
 
+  @Throttle(CATALOG_THROTTLE)
   @Get()
   getHome(): Promise<HomeResponseDTO> {
     return this.homeService.getHome();

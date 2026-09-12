@@ -12,6 +12,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -20,6 +21,7 @@ import { MarketplaceService } from './marketplace.service';
 import { CreateMarketplaceItemDto } from './dto/create-marketplace-item.dto';
 import { UpdateMarketplaceItemDto } from './dto/update-marketplace-item.dto';
 import { ListMarketplaceQueryDto } from './dto/list-marketplace-query.dto';
+import { CATALOG_THROTTLE } from '../config/throttle.config';
 import { AttachMarketplaceMediaDto } from './dto/attach-marketplace-media.dto';
 import type {
   MarketplaceItemDetailDto,
@@ -37,6 +39,7 @@ export class MarketplaceController {
   constructor(private readonly marketplaceService: MarketplaceService) {}
 
   /** Public: published listings with ?q=, ?sort=, and DL-011 pagination. */
+  @Throttle(CATALOG_THROTTLE)
   @Get()
   async listPublished(
     @Query() query: ListMarketplaceQueryDto,

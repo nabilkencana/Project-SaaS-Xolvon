@@ -1,18 +1,31 @@
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { resolveCorsOrigins } from './config/cors';
+import { resolveTrustProxyHops } from './config/trust-proxy';
 import { enableSecurityHeaders } from './security/security-headers';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   const configService = app.get(ConfigService);
 
   // Global route prefix — all routes served under /api/*
   app.setGlobalPrefix('api');
+
+  // Client-IP resolution for rate limiting (T6). Assumption: staging and
+  // production run behind exactly one trusted edge proxy and set
+  // TRUST_PROXY_HOPS=1, so Express derives req.ip (the ThrottlerGuard
+  // tracker) from X-Forwarded-For. Locally the variable stays unset, which
+  // fails closed to `false`: no header is trusted, so throttling limits
+  // cannot be spoofed, and a malformed value aborts bootstrap.
+  app.set(
+    'trust proxy',
+    resolveTrustProxyHops(configService.get<string>('TRUST_PROXY_HOPS')),
+  );
 
   // Security headers (Helmet) — wired BEFORE CORS, validation pipes and the
   // exception filter so every response, including preflight and error

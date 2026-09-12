@@ -11,6 +11,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Public } from '../auth/decorators/public.decorator';
@@ -20,6 +21,7 @@ import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { ListProjectsQueryDto } from './dto/list-projects-query.dto';
+import { CATALOG_THROTTLE } from '../config/throttle.config';
 import type { ProjectCardDto } from './dto/project-card.dto';
 import type { ProjectDetailDto } from './dto/project-detail.dto';
 import type { ProjectResponseDto } from './dto/project-response.dto';
@@ -37,6 +39,7 @@ export class ProjectsController {
 
   /** Public: published projects with ?q= (title/summary contains) and DL-011 pagination. */
   @Public()
+  @Throttle(CATALOG_THROTTLE)
   @Get()
   async listPublished(
     @Query() query: ListProjectsQueryDto,

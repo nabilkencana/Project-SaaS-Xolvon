@@ -9,11 +9,13 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { OrdersService } from './orders.service';
+import { ORDER_THROTTLE } from '../config/throttle.config';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { SubmitPaymentProofDto } from './dto/submit-payment-proof.dto';
 import type {
@@ -30,6 +32,7 @@ export class OrdersController {
    * Creates pending order and calculates total price securely on server.
    */
   @UseGuards(AuthGuard)
+  @Throttle(ORDER_THROTTLE)
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async checkout(
