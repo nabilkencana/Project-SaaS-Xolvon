@@ -8,6 +8,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { SanitizedText } from '../../common/sanitization/sanitized-text.decorator';
 
 /**
  * Admin create payload (SCHEMA.md §19). `status` is deliberately NOT accepted
@@ -23,6 +24,7 @@ export class CreateLessonDto {
   @IsOptional()
   @IsString({ message: 'content harus berupa teks string.' })
   @MaxLength(20000, { message: 'content maksimal 20000 karakter.' })
+  @SanitizedText()
   content?: string;
 
   @Type(() => Number)

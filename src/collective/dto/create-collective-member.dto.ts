@@ -11,6 +11,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { SanitizedText } from '../../common/sanitization/sanitized-text.decorator';
 
 export class SocialLinkInputDto {
   @IsString()
@@ -56,6 +57,7 @@ export class CreateCollectiveMemberDto {
   @IsOptional()
   @IsString()
   @MaxLength(2000)
+  @SanitizedText()
   bio?: string;
 
   @IsOptional()

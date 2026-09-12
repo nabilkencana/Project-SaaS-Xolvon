@@ -49,3 +49,60 @@ No secrets, tokens, or credentials appear in any header value.
   origin-parsing edge cases and the no-`unsafe-*` rule.
 - Surface level: `curl -s -i` against the local server with and without
   `APP_ENV=production` (evidence in the plan notepad, `.omo/…/evidence/`).
+
+## Input sanitization
+
+Free-text input is normalized by a bounded, deterministic policy before it can
+be persisted, implemented in `src/common/sanitization/` and wired per field
+through the existing global `ValidationPipe` (`whitelist`/
+`forbidNonWhitelisted`/`transform` in `src/main.ts` are unchanged).
+
+**Policy — `sanitizeText(value, { maxLength, allowHtml })`:**
+
+- Content fields intended for rendered HTML (`allowHtml: false`, the default
+  and the only mode in use) have every tag-shaped substring (`<…>`) removed
+  (a fixed-point sweep re-checks defensively), so payloads such as
+  `<scr<script>ipt>` or `<<b>script>` never survive. The backend never
+  stores raw executable HTML/script content.
+- Invisible control characters (NUL, ESC, and the rest of C0/DEL except
+  `\t` `\n` `\r`) are stripped.
+- Everything else — including ordinary Unicode (emoji, accented Latin, CJK),
+  ampersands, and quotes — is preserved byte-for-byte. No trimming, case
+  changes, or truncation: a valid request's visible content is never altered.
+- Oversized values are rejected with `400`, not truncated: every sanitized
+  field carries an explicit `@MaxLength`, and the helper's `maxLength` option
+  throws (never echoes the value) for programmatic callers.
+
+**Policy — JSON metadata (`parseSafeJson` / `@IsSafeMetadata`):**
+
+- Metadata TEXT fields that may carry structured content (project `tech_stack`)
+  follow "JSON-shaped means JSON-valid": a value starting with `[` or `{` must
+  parse as a complete JSON document or the request is rejected with `400`;
+  malformed payloads are never stored for read mappers to silently degrade.
+  Legacy comma-separated lists remain valid, matching `parseTechStack` in
+  `src/projects/mappers/project.mapper.ts`.
+
+**Sanitized fields (create + update DTOs):** `courses.description`,
+`lessons.content`, `projects.summary/problem/solution/result`,
+`marketplace.description`, `collective.bio`, `orders.notes` (all via
+`@SanitizedText`), plus `projects.techStack` via `@IsSafeMetadata`. Plain-text
+and identity fields (titles, slugs, names, roles, object keys, tokens) are
+deliberately not rewritten — their length/type bounds stay as before.
+
+**Known limits:** the policy neutralizes markup at the write boundary;
+renderers must still apply their own contextual escaping (defense in depth,
+on top of the CSP in [Security headers](#security-headers)). String items
+inside arrays (`skills`, `capabilities`) keep their existing type/size bounds
+and are out of scope for tag stripping.
+
+### Verification
+
+- Unit level: `src/common/sanitization/sanitization.spec.ts` (runs under
+  `npm run test:esm`) — 27 tests covering tag removal, reassembly payloads,
+  Unicode preservation, control characters, length bounds, idempotence,
+  malformed/valid JSON metadata, and the real content DTOs.
+- Surface level: the T7 block in `test/app.e2e-spec.ts` asserts that markup is
+  gone from the actual DB `INSERT` parameters, oversized content returns 400
+  before any write, and malformed `techStack` JSON returns 400; manual
+  `curl` evidence lives in the plan notepad,
+  `.omo/notepads/xolvon-addendum-hardening-docs/evidence/`.

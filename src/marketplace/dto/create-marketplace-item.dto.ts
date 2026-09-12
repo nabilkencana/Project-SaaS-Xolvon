@@ -7,6 +7,7 @@ import {
   Matches,
   MaxLength,
 } from 'class-validator';
+import { SanitizedText } from '../../common/sanitization/sanitized-text.decorator';
 
 export class CreateMarketplaceItemDto {
   @IsString({ message: 'title harus berupa teks string.' })
@@ -24,6 +25,7 @@ export class CreateMarketplaceItemDto {
   @IsOptional()
   @IsString({ message: 'description harus berupa teks string.' })
   @MaxLength(2000, { message: 'description maksimal 2000 karakter.' })
+  @SanitizedText()
   description?: string;
 
   /**

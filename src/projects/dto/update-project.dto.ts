@@ -5,6 +5,8 @@ import {
   Matches,
   MaxLength,
 } from 'class-validator';
+import { SanitizedText } from '../../common/sanitization/sanitized-text.decorator';
+import { IsSafeMetadata } from '../../common/sanitization/is-safe-metadata.decorator';
 
 /** Partial update — every field optional; service only writes provided fields. */
 export class UpdateProjectDto {
@@ -31,25 +33,30 @@ export class UpdateProjectDto {
   @IsOptional()
   @IsString({ message: 'summary harus berupa teks string.' })
   @MaxLength(500, { message: 'summary maksimal 500 karakter.' })
+  @SanitizedText()
   summary?: string;
 
   @IsOptional()
   @IsString({ message: 'problem harus berupa teks string.' })
   @MaxLength(10000, { message: 'problem maksimal 10000 karakter.' })
+  @SanitizedText()
   problem?: string;
 
   @IsOptional()
   @IsString({ message: 'solution harus berupa teks string.' })
   @MaxLength(10000, { message: 'solution maksimal 10000 karakter.' })
+  @SanitizedText()
   solution?: string;
 
   @IsOptional()
   @IsString({ message: 'techStack harus berupa teks string.' })
   @MaxLength(1000, { message: 'techStack maksimal 1000 karakter.' })
+  @IsSafeMetadata()
   techStack?: string;
 
   @IsOptional()
   @IsString({ message: 'result harus berupa teks string.' })
   @MaxLength(10000, { message: 'result maksimal 10000 karakter.' })
+  @SanitizedText()
   result?: string;
 }

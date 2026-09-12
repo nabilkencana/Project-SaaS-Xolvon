@@ -9,6 +9,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { SanitizedText } from '../../common/sanitization/sanitized-text.decorator';
 
 /**
  * Admin create payload (SCHEMA.md §14). `status` is deliberately NOT
@@ -31,6 +32,7 @@ export class CreateCourseDto {
   @IsString({ message: 'description harus berupa teks string.' })
   @IsNotEmpty({ message: 'description tidak boleh kosong.' })
   @MaxLength(5000, { message: 'description maksimal 5000 karakter.' })
+  @SanitizedText()
   description: string;
 
   @Type(() => Number)

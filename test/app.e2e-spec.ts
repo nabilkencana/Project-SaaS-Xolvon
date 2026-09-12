@@ -2595,4 +2595,189 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
       expect(freshIp.headers['x-ratelimit-remaining-search']).toBe('29');
     });
   });
+
+  describe('input sanitization policy (T7)', () => {
+    const adminToken = () =>
+      signToken({
+        sub: 'admin-uuid-1',
+        email: 'admin@example.com',
+        role: 'admin',
+      });
+
+    const userToken = () =>
+      signToken({
+        sub: 'user-uuid-1',
+        email: 'e2e.user@example.com',
+        role: 'user',
+      });
+
+    it('t7-neutralizes: strips tag-shaped markup from a course description before the DB ever sees it', async () => {
+      dbQueryOne.mockResolvedValueOnce(undefined); // slug available
+
+      const res = await request(app.getHttpServer())
+        .post('/api/courses')
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({
+          title: 'Aman',
+          slug: 'aman-t7',
+          description:
+            "<script>stealCookies()</script>Belajar aman 🚀 & <b>produktif</b>",
+          price: 1000,
+        })
+        .expect(201);
+
+      expect(res.body.description).toBe(
+        'stealCookies()Belajar aman 🚀 & produktif',
+      );
+
+      const insertParams = dbExecute.mock.calls[0][1];
+      expect(insertParams).toContain(
+        'stealCookies()Belajar aman 🚀 & produktif',
+      );
+      expect(JSON.stringify(insertParams)).not.toContain('<');
+    });
+
+    it('t7-plain-text: keeps ordinary Unicode content byte-identical end to end', async () => {
+      dbQueryOne.mockResolvedValueOnce(undefined); // slug available
+      const description = 'Belajar Full-Stack & DevOps — 日本語 🚀 naïve';
+
+      const res = await request(app.getHttpServer())
+        .post('/api/courses')
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({
+          title: 'Global',
+          slug: 'global-t7',
+          description,
+          price: 1000,
+        })
+        .expect(201);
+
+      expect(res.body.description).toBe(description);
+      expect(dbExecute.mock.calls[0][1]).toContain(description);
+    });
+
+    it('t7-oversized: rejects a 5001-character description with 400 before any DB write', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/courses')
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({
+          title: 'Panjang',
+          slug: 'panjang-t7',
+          description: 'x'.repeat(5001),
+          price: 1000,
+        })
+        .expect(400);
+
+      expect(res.body.message).toContain('description maksimal 5000 karakter.');
+      expectDbUnused();
+    });
+
+    it('t7-metadata: rejects JSON-shaped-but-malformed techStack with 400', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/projects')
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({
+          title: 'Meta',
+          slug: 'meta-t7',
+          techStack: '[React, Node',
+        })
+        .expect(400);
+
+      expect(
+        (res.body.message as string[]).some((m) => m.includes('techStack')),
+      ).toBe(true);
+      expectDbUnused();
+    });
+
+    it('t7-metadata: accepts a valid JSON-array techStack and stores it untouched', async () => {
+      dbQueryOne.mockResolvedValueOnce(undefined); // slug available
+
+      const res = await request(app.getHttpServer())
+        .post('/api/projects')
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({
+          title: 'Meta OK',
+          slug: 'meta-ok-t7',
+          techStack: '["React 🚀", "PostgreSQL"]',
+        })
+        .expect(201);
+
+      expect(res.body.techStack).toEqual(['React 🚀', 'PostgreSQL']);
+      expect(dbExecute.mock.calls[0][1]).toContain('["React 🚀", "PostgreSQL"]');
+    });
+
+    it('t7-plain-text: does not rewrite plain-text fields (comma techStack)', async () => {
+      dbQueryOne.mockResolvedValueOnce(undefined); // slug available
+
+      const res = await request(app.getHttpServer())
+        .post('/api/projects')
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({
+          title: 'Legacy',
+          slug: 'legacy-t7',
+          techStack: 'Next.js, TypeScript',
+        })
+        .expect(201);
+
+      expect(res.body.techStack).toEqual(['Next.js', 'TypeScript']);
+    });
+
+    it('t7-neutralizes: collective bio markup never reaches the INSERT params', async () => {
+      dbQueryOne.mockResolvedValueOnce(undefined); // slug uniqueness
+      dbQueryOne.mockResolvedValueOnce({
+        id: '44444444-4444-4444-8444-444444444444',
+        name: 'Siti',
+        slug: 'siti-t7',
+        photo: null,
+        role: 'Engineer',
+        skills: 'React',
+        bio: 'xInsinyur 🚀',
+        social_links: null,
+        status: 'draft',
+        display_order: 0,
+        created_at: '2026-09-12T00:00:00.000Z',
+      }); // re-read after insert
+
+      await request(app.getHttpServer())
+        .post('/api/collective')
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({
+          name: 'Siti',
+          slug: 'siti-t7',
+          role: 'Engineer',
+          skills: ['React'],
+          bio: '<script>x</script>Insinyur 🚀',
+        })
+        .expect(201);
+
+      const insertParams = dbExecute.mock.calls[0][1];
+      expect(insertParams).toContain('xInsinyur 🚀');
+      expect(JSON.stringify(insertParams)).not.toContain('<');
+    });
+
+    it('t7-neutralizes: user-authored order notes markup is removed before persistence', async () => {
+      dbQueryAll.mockResolvedValueOnce([
+        {
+          id: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+          price: 1000,
+        },
+      ]);
+      dbQueryOne.mockResolvedValueOnce({ total: 0 });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .send({
+          courseIds: ['3f2504e0-4f89-41d3-9a0c-0305e82c3301'],
+          notes: "<img src=x onerror='pwn()'>transfer jam 3",
+        })
+        .expect(201);
+
+      expect(res.body).toMatchObject({
+        notes: 'transfer jam 3',
+        status: 'pending',
+      });
+      expect(JSON.stringify(dbExecute.mock.calls[0][1])).not.toContain('<');
+    });
+  });
 });

@@ -7,6 +7,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { SanitizedText } from '../../common/sanitization/sanitized-text.decorator';
 
 /** Partial admin update — only the provided fields are applied. */
 export class UpdateLessonDto {
@@ -18,6 +19,7 @@ export class UpdateLessonDto {
   @IsOptional()
   @IsString({ message: 'content harus berupa teks string.' })
   @MaxLength(20000, { message: 'content maksimal 20000 karakter.' })
+  @SanitizedText()
   content?: string;
 
   @IsOptional()

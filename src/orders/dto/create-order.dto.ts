@@ -7,6 +7,7 @@ import {
   IsUUID,
   MaxLength,
 } from 'class-validator';
+import { SanitizedText } from '../../common/sanitization/sanitized-text.decorator';
 
 export class CreateOrderDto {
   @IsArray({ message: 'courseIds harus berupa array.' })
@@ -18,5 +19,6 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString({ message: 'notes harus berupa teks string.' })
   @MaxLength(500, { message: 'notes maksimal 500 karakter.' })
+  @SanitizedText()
   notes?: string;
 }

@@ -6,6 +6,7 @@ import {
   Matches,
   MaxLength,
 } from 'class-validator';
+import { SanitizedText } from '../../common/sanitization/sanitized-text.decorator';
 
 /** Partial admin update — only the provided fields are applied. */
 export class UpdateMarketplaceItemDto {
@@ -25,6 +26,7 @@ export class UpdateMarketplaceItemDto {
   @IsOptional()
   @IsString({ message: 'description harus berupa teks string.' })
   @MaxLength(2000, { message: 'description maksimal 2000 karakter.' })
+  @SanitizedText()
   description?: string;
 
   /** Revalidated in the service: valid URL parse + https-only (DL-013). */

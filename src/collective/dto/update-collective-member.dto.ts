@@ -12,6 +12,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { SocialLinkInputDto } from './create-collective-member.dto';
+import { SanitizedText } from '../../common/sanitization/sanitized-text.decorator';
 
 /**
  * Hand-written partial of CreateCollectiveMemberDto. @nestjs/swagger's
@@ -55,6 +56,7 @@ export class UpdateCollectiveMemberDto {
   @IsOptional()
   @IsString()
   @MaxLength(2000)
+  @SanitizedText()
   bio?: string;
 
   @IsOptional()
