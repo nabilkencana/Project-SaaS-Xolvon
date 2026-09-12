@@ -464,6 +464,68 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
     });
   });
 
+  describe('GET /api/search (public cross-entity search)', () => {
+    it('returns published course, project, and marketplace results with pagination', async () => {
+      dbQueryOne.mockResolvedValueOnce({ total: 3 });
+      dbQueryAll.mockResolvedValueOnce([
+        {
+          entity_type: 'course',
+          id: 'course-search-1',
+          title: 'Published Course',
+          slug: 'published-course',
+          description: 'Public course',
+          status: 'published',
+          created_at: '2026-09-12T00:00:03.000Z',
+        },
+        {
+          entity_type: 'project',
+          id: 'project-search-1',
+          title: 'Published Project',
+          slug: 'published-project',
+          description: 'Public project',
+          status: 'published',
+          created_at: '2026-09-12T00:00:02.000Z',
+        },
+        {
+          entity_type: 'marketplace',
+          id: 'item-search-1',
+          title: 'Published Item',
+          slug: 'published-item',
+          description: 'Public item',
+          status: 'published',
+          created_at: '2026-09-12T00:00:01.000Z',
+        },
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/search?q=public&page=1&limit=3')
+        .expect(200);
+
+      expect(res.body).toMatchObject({ query: 'public', page: 1, limit: 3, total: 3 });
+      expect(res.body.items).toEqual([
+        expect.objectContaining({ type: 'course', status: 'published' }),
+        expect.objectContaining({ type: 'project', status: 'published' }),
+        expect.objectContaining({ type: 'marketplace', status: 'published' }),
+      ]);
+      expect(dbQueryAll.mock.calls[0][0]).toContain("status = 'published'");
+      expect(dbQueryAll.mock.calls[0][0]).toContain('MATCH ?');
+    });
+
+    it('excludes draft, private, and revoked content and rejects invalid pagination', async () => {
+      dbQueryOne.mockResolvedValueOnce({ total: 0 });
+      dbQueryAll.mockResolvedValueOnce([]);
+
+      const empty = await request(app.getHttpServer())
+        .get('/api/search?q=draft%20private%20revoked&page=2&limit=2')
+        .expect(200);
+      expect(empty.body.items).toEqual([]);
+      expect(dbQueryAll.mock.calls[0][0]).not.toContain('revoked');
+
+      await request(app.getHttpServer()).get('/api/search?page=0&limit=101').expect(400);
+      expect(dbQueryOne).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('collective — member profiles and privacy (SCHEMA.md §54-57)', () => {
     /**
      * Security fixture: contact fields are intentionally present in the row

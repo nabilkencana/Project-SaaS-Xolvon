@@ -22,6 +22,7 @@ import { AdminModule } from './admin/admin.module';
 import { validateEnvironment } from './config/env.validation';
 import { MediaModule } from './media/media.module';
 import { ProgressModule } from './progress/progress.module';
+import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { ProgressModule } from './progress/progress.module';
     AdminModule,
     MediaModule,
     ProgressModule,
+    SearchModule,
   ],
   controllers: [AppController],
   providers: [

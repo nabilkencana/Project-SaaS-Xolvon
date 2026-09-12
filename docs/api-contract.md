@@ -49,6 +49,14 @@ disempurnakan penuh di T16 (`.omo/plans/xolvon-backend-build.md`).
 |---|---|---|---|---|---|---|---|
 | GET | `/api` | Public | - | aktif | Health check / hello | - | `string` (200) |
 
+### Search (`src/search/search.controller.ts`)
+
+| Method | Path | Auth | Role | Status | Deskripsi | Request | Response |
+|---|---|---|---|---|---|---|---|
+| GET | `/api/search` | Public | - | aktif | Pencarian lintas course, project, dan marketplace; hanya `published`; FTS5; `?q=` opsional, `?type=course\|project\|marketplace` opsional, pagination DL-011 | `SearchQueryDto` | `{items: SearchResultDto[], query, page, limit, total}` (200) |
+
+`SearchResultDto` hanya memuat `{type, id, title, slug, description, status}`. Search tidak pernah mengembalikan draft, private, admin-only, unpublished, atau revoked content; seluruh search term dan pagination memakai DTO validation serta bind parameters.
+
 ### Courses (`src/courses/courses.controller.ts`)
 
 | Method | Path | Auth | Role | Status | Deskripsi | Request | Response |
@@ -97,19 +105,45 @@ problem, solution, techStack: string[], result, media: {id, mediaType,
 sortOrder}[], members: {memberId, name, role}[], status}` — media publik
 tanpa `objectKey`, video dieksklusi (butuh signed private access, T13/T14).
 
-### Admin — belum ada
+### Admin (`src/admin/admin.controller.ts`)
 
-`AdminModule` berupa stub tanpa endpoint. Endpoint admin (`GET /admin/users`,
-`GET /admin/orders`, `GET /admin/overview`) direncanakan di T12 dan akan
-ditambahkan ke dokumen ini saat aktif. Semua route `/admin/*` menolak
-non-admin dengan 403 server-side.
+| Method | Path | Auth | Role | Status | Deskripsi |
+|---|---|---|---|---|---|
+| GET | `/api/admin/users` | Bearer JWT | admin | aktif | Paginated user list. |
+| GET | `/api/admin/users/:id` | Bearer JWT | admin | aktif | User detail. |
+| GET | `/api/admin/orders` | Bearer JWT | admin | aktif | Paginated order list. |
+| GET | `/api/admin/overview` | Bearer JWT | admin | aktif | User/order/enrollment summary. |
+
+### Learning, media, and order operations
+
+All routes in this table require Bearer JWT. Admin routes additionally require
+the `admin` role; user routes derive ownership from the JWT subject.
+
+| Method | Path | Role | Status | Deskripsi |
+|---|---|---|---|---|
+| POST | `/api/courses/:courseId/lessons` | admin | aktif | Create lesson. |
+| PATCH | `/api/lessons/:id` | admin | aktif | Update lesson. |
+| DELETE | `/api/lessons/:id` | admin | aktif | Delete lesson. |
+| PATCH | `/api/lessons/:id/reorder` | admin | aktif | Reorder lesson. |
+| POST | `/api/lessons/:id/publish` | admin | aktif | Publish lesson. |
+| POST | `/api/lessons/:id/unpublish` | admin | aktif | Unpublish lesson. |
+| POST | `/api/lessons/:lessonId/resources` | admin | aktif | Create resource. |
+| DELETE | `/api/resources/:id` | admin | aktif | Delete resource. |
+| GET | `/api/lessons/:id/video-url` | user | aktif | Signed lesson video URL for active enrollment. |
+| POST | `/api/progress` | user | aktif | Write owned progress. |
+| GET | `/api/progress` | user | aktif | Read owned progress. |
+| PATCH | `/api/enrollments/:id/revoke` | admin | aktif | Revoke enrollment and audit. |
+| POST | `/api/orders/:id/cancel` | admin | aktif | Cancel pending order and audit. |
+| POST | `/api/admin/media/upload-url` | admin | aktif | Create validated media upload URL. |
+| POST | `/api/admin/media/confirm` | admin | aktif | Confirm media upload. |
+| POST | `/api/admin/media/read-url` | admin | aktif | Create private media read URL. |
 
 ---
 
-## Endpoint planned (didefinisikan plan, belum ada)
+## Historical implementation notes
 
-Bagian kosong per modul baru. Path di bawah diambil dari plan; status tetap
-`planned` sampai modul terkait selesai dan barisnya pindah ke tabel aktif.
+The endpoint tables above are the active contract. The notes below preserve
+module-specific response and validation details from the implementation plan.
 
 ### Courses — aktif (T5)
 
@@ -118,10 +152,10 @@ dari input (DTO tidak memilikinya; global `ValidationPipe`
 `forbidNonWhitelisted` menolak field di luar DTO) — transisi status hanya via
 endpoint publish/unpublish.
 
-### Lessons & Course Resources — planned (T6)
+### Lessons & Course Resources — aktif (T6)
 
-Belum ada endpoint. CRUD admin untuk lesson (`order_index`, draft/published)
-dan resource `pdf|resource|assignment`; summary publik tanpa field privat.
+CRUD admin untuk lesson (`order_index`, draft/published) dan resource
+`pdf|resource|assignment`; summary publik tanpa field privat.
 
 ### Projects / Project Media / Project Members — aktif (T7)
 
@@ -156,17 +190,17 @@ DL-013; governance tetap OPEN — PRD §91.11).
 `MarketplaceItemDto` (SCHEMA.md §59): `{id, title, slug, description,
 capabilities: string[], externalUrl, status}`.
 
-### Home — planned (T10)
+### Home — aktif (T10)
 
-Belum ada endpoint. Agregasi published-only (featured courses, projects,
-marketplace, collective) tanpa N+1.
+Agregasi published-only (featured courses, projects, marketplace, collective)
+tanpa N+1.
 
-### Audit — planned (T11)
+### Audit — aktif internal (T11)
 
 Belum ada endpoint — dan tidak akan punya endpoint publik. `record()` internal
 untuk modul lain; `metadata` tidak pernah keluar ke API publik/user.
 
-### Admin — planned (T12)
+### Admin — aktif (T12)
 
 | Method | Path | Auth | Role | Deskripsi |
 |---|---|---|---|---|
@@ -174,30 +208,30 @@ untuk modul lain; `metadata` tidak pernah keluar ke API publik/user.
 | GET | `/api/admin/orders` | Bearer JWT | admin | Tabel orders (kolom per PRD §45) |
 | GET | `/api/admin/overview` | Bearer JWT | admin | userCount / pendingOrders / activeEnrollments |
 
-### Media (R2) — planned (T13)
+### Media (R2) — aktif (T13)
 
 | Method | Path | Auth | Role | Deskripsi |
 |---|---|---|---|---|
 | POST | `/api/admin/media/upload-url` | Bearer JWT | admin | Presigned PUT 3600s; MIME/size/prefix divalidasi; key server-generated |
 | POST | `/api/admin/media/confirm` | Bearer JWT | admin | Konfirmasi upload |
 
-### Lessons video & Progress — planned (T14)
+### Lessons video & Progress — aktif (T14)
 
 | Method | Path | Auth | Role | Deskripsi |
 |---|---|---|---|---|
 | GET | `/api/lessons/:id/video-url` | Bearer JWT | user aktif | Signed URL 300s; wajib enrollment aktif + lesson milik course (anti-IDOR) |
 | POST | `/api/progress` | Bearer JWT | user aktif | Tulis progress; ownership dari sesi, bukan body |
 
-### Orders (tambahan) — planned (T15)
+### Orders (tambahan) — aktif (T15)
 
 | Method | Path | Auth | Role | Deskripsi |
 |---|---|---|---|---|
 | POST | `/api/admin/orders/:id/cancel` | Bearer JWT | admin | Cancel order, hanya dari `pending` → `cancelled` + audit |
 
-### Search — planned (T16)
+### Search — aktif (T16)
 
-Belum ada endpoint. Pencarian lintas entitas published-only via FTS5, mengikuti
-kontrak pagination DL-011.
+Endpoint lintas entitas sudah aktif pada tabel di atas. Search bersifat public,
+published-only, memakai FTS5, dan mengikuti kontrak pagination DL-011.
 
 ---
 
