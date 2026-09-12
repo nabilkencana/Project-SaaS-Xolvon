@@ -629,3 +629,203 @@ Impact:
 Local dry-run is supported without Cloudflare credentials. Staging/production live
 deployment and provider selection remain T20 work and are not claimed by T19.
 ```
+
+---
+
+## Addendum hardening decisions (T1)
+
+### DL-018 — Bearer-only request integrity
+
+```text
+Owner:
+Founder/BE Lead
+
+Options:
+- Add a cookie-backed CSRF token flow.
+- Keep the API Bearer-only and enforce browser request-integrity checks using
+  allowed Origin/Referer and Fetch-Metadata policy for mutation requests.
+
+Decision:
+Use Bearer-only request integrity. Do not add a CSRF cookie token because the
+current API authentication contract uses Authorization Bearer tokens rather than
+cookie authentication. Browser mutation requests will be checked against the
+explicit request-integrity policy in T3.
+
+Date:
+2026-09-12
+
+Impact:
+No CSRF cookie or token secret is added. No-cookie Bearer API clients remain
+supported; GET requests are unaffected. Non-browser service-to-service access
+requires the explicit policy defined during implementation.
+```
+
+### DL-019 — Playwright PDF artifacts
+
+```text
+Owner:
+Founder/BE Lead
+
+Options:
+- Keep documentation as Markdown only or generate PDFs outside the repository.
+- Generate Markdown-to-PDF artifacts with Playwright/Chromium and commit them.
+
+Decision:
+Use Playwright/Chromium for the approved Markdown-to-PDF workflow. Generated
+documentation PDFs are committed, including the combined document in the order
+README, Architecture, Security, and Deployment Runbook.
+
+Date:
+2026-09-12
+
+Impact:
+PDF output becomes a reviewed repository artifact and must be regenerated and
+secret-scanned when its source documentation changes. No credentials or private
+environment values may appear in the source or generated PDFs.
+```
+
+### DL-020 — Environment CORS whitelist and origin placeholders
+
+```text
+Owner:
+Founder/BE Lead
+
+Options:
+- Continue using one FRONTEND_URL origin.
+- Parse CORS_ALLOWED_ORIGINS as an environment-specific explicit whitelist.
+
+Decision:
+Use CORS_ALLOWED_ORIGINS as the explicit whitelist, with a localhost fallback
+for local development. Staging and production origins remain OPEN placeholders
+until the owner supplies final domains; wildcard origins are not approved when
+credentials are enabled.
+
+Date:
+2026-09-12
+
+Impact:
+T5 must preserve local startup without a final deployment domain and must reject
+unknown credentialed origins. Staging and production deployment evidence remains
+blocked until real target origins are provided; no domain is fabricated here.
+```
+
+### DL-021 — CSP connect and media origins
+
+```text
+Owner:
+Founder/BE Lead
+
+Options:
+- Allow broad CSP connect-src and media-src values.
+- Use explicit environment origin lists and leave unavailable deployment origins
+  open until owner confirmation.
+
+Decision:
+Use explicit CSP connect-src and media-src origin lists. Final frontend,
+storage, and other deployment-specific origins remain OPEN placeholders until
+the owner confirms them. Do not enable unsafe-inline or unsafe-eval as a default.
+
+Date:
+2026-09-12
+
+Impact:
+T4 must document the approved local baseline and make staging/production CSP
+origins configurable without embedding unverified domains or secrets.
+```
+
+### DL-022 — Monitoring provider and recipients
+
+```text
+Owner:
+Founder/BE Lead
+
+Options:
+- Select a monitoring vendor and alert recipients now.
+- Keep MonitoringPort as the boundary until provider and recipient decisions are
+  approved.
+
+Decision:
+Monitoring provider and alert recipients remain OPEN. The existing
+MonitoringPort interface is the only approved integration boundary for this
+stage; no vendor SDK, endpoint, recipient address, or credential is selected.
+
+Date:
+2026-09-12
+
+Impact:
+Later monitoring work must record the provider, recipients, data boundary, and
+secret-store location in a new decision entry before production wiring.
+```
+
+### DL-023 — Security scanner choice
+
+```text
+Owner:
+Founder/BE Lead
+
+Options:
+- Adopt a named third-party or paid security scanner.
+- Use repository-native scans and npm audit while scanner selection is open.
+
+Decision:
+Security scanner choice remains OPEN. T1 records no vendor commitment; current
+verification uses the repository-native secret-pattern review and the existing
+quality commands. A future scanner requires explicit owner approval and a new
+decision entry.
+
+Date:
+2026-09-12
+
+Impact:
+No scanner credentials, paid service, or CI integration is added. Residual scan
+coverage and any selected tool must be documented before the final security gate.
+```
+
+### DL-024 — Postman production placeholders
+
+```text
+Owner:
+Founder/BE Lead
+
+Options:
+- Commit populated production credentials or target-specific values.
+- Commit production environment structure with blank placeholders only.
+
+Decision:
+Postman production environments may contain names, URLs marked as placeholders,
+and blank secret variables only. No access token, password, API key, cookie, or
+other production credential may be committed.
+
+Date:
+2026-09-12
+
+Impact:
+T11 can provide importable production structure without claiming production
+readiness. Operators must supply values through an external secret-safe workflow.
+```
+
+### DL-025 — Conservative cleanup policy
+
+```text
+Owner:
+Founder/BE Lead
+
+Options:
+- Remove ambiguous files and generated artifacts during hardening.
+- Preserve source, migrations, evidence, and user changes; remove only proven
+  temporary artifacts with a deletion ledger entry.
+
+Decision:
+Use conservative, reversible cleanup. Preserve source, migrations, evidence,
+approved PDFs, and unrelated user changes. Delete only an artifact proven to be
+temporary, and record its path and rationale in the cleanup ledger. Do not edit
+or delete secrets as a substitute for rotation or incident handling.
+
+Date:
+2026-09-12
+
+Impact:
+T12 must produce an explainable file-by-file cleanup diff and must leave required
+files intact. Any tracked environment secret requires separate incident handling,
+not silent cleanup.
+```

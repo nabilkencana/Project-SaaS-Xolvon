@@ -1,0 +1,16 @@
+T1 baseline command evidence
+Date: 2026-09-12
+
+Command: npm run test:esm
+Result: PASS; 36 suites passed, 314 tests passed.
+
+Command: npm run test:e2e
+Result: PASS; 1 suite passed, 83 tests passed.
+
+Command: npm run build
+Result: PASS; nest build exited 0.
+
+Command: npm run lint
+Result: PASS; oxlint src/ test/ exited 0.
+
+No credentials, tokens, passwords, or environment values are included in this evidence.
