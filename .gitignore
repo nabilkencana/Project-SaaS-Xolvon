@@ -66,3 +66,8 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Test
 /test/*
+
+# Documentation build scratch files; generated PDFs are committed artifacts.
+docs/pdf/.tmp/
+!docs/pdf/
+!docs/pdf/*.pdf
