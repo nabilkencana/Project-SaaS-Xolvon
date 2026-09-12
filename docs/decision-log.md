@@ -1039,3 +1039,69 @@ consumers; T14 reconciles README prose. No environment secret is committed
 (secret scan recorded in .omo notepad evidence t11). Deletion is reversible:
 the old file remains recoverable from `git show 9a6d1d7:Xolvon-API.postman_collection.json`.
 ```
+
+## Cleanup ledger (T12)
+
+Executed 2026-09-12 under the DL-025 conservative cleanup policy. Audit covered
+`git status`, `git ls-files`, `git ls-files -o --exclude-standard`, and a
+root/subfolder scan for `*.tmp`, `*.bak`, `*.log`, `Thumbs.db`, `.DS_Store`
+(none tracked, none present). Tracked total before and after: 266 files — no
+tracked file was deleted by this task; every deletion below is an untracked,
+gitignored working-copy remnant of a scratch file that was previously committed
+and already purged from tracking by commit `e91dc97` ("chore: cleanup gitignore,
+purge scratch artifacts"). Each deleted file's full content remains recoverable
+from history via `git show e91dc97^:<path>`.
+
+### Deleted (proven stale scratch, zero tracked references — verified by `git grep`)
+
+| Path | Reason | Recovery |
+|------|--------|----------|
+| `t15-verification.md` | Stale T15 verification scratch at repo root; no reference in any tracked doc/script/test. | `git show e91dc97^:t15-verification.md` |
+| `t3-happy.txt` | Stale T3 evidence scratch at repo root; only cross-referenced by the untracked root `DoneClaim` scratch file itself, not by tracked material. | `git show e91dc97^:t3-happy.txt` |
+| `t3-failure.txt` | Same as above. | `git show e91dc97^:t3-failure.txt` |
+| `learning-t3.md` | Stale T3 learning scratch at repo root; only referenced by the untracked `DoneClaim` scratch, not by tracked material. | `git show e91dc97^:learning-t3.md` |
+
+### Kept — needs owner decision (referenced by tracked `docs/qa-results.md`)
+
+| Path | Why kept |
+|------|----------|
+| `DoneClaim` | Untracked scratch, but `docs/qa-results.md` §T19 cites it by name as the historical record that production credentials were never exercised. Deleting would strand a live documentation reference. Owner may delete once T14 reconciles the qa-results prose. |
+| `evidence-t19-happy.txt` | Same: cited by name in `docs/qa-results.md:34-35`. |
+| `evidence-t19-failure.txt` | Same: cited by name in `docs/qa-results.md:34-35`. |
+| `t20-happy.txt` | Cited by name in `docs/qa-results.md` (BLOCKED-gate evidence for T20). |
+| `t20-failure.txt` | Cited by name in `docs/qa-results.md` (BLOCKED-gate evidence for T20). |
+
+### Disposition notes (NOT deletions; guarded per T12 scope)
+
+- No tracked file under `src/`, `migrations/`, `test/`, or this
+  `docs/decision-log.md` was removed or altered beyond this ledger append.
+- The out-of-band root `README.md` rewrite (commit `65ecc4d` era / post-T work)
+  and its stale `Xolvon-API.postman_collection.json` link are left untouched —
+  owned by the T14 docs-reconciliation pass (already anticipated by DL-029).
+- `.omo/` and `docs/pdf/` were not touched (committed artifacts by owner
+  decision, DL-019/DL-026).
+- No git history was rewritten; nothing was reset, rebased, or reverted.
+
+### Environment / secret hygiene findings
+
+- `git ls-files | grep -E '(^|/)\.env$'` → empty: no real `.env` is tracked.
+- `git log --all --oneline -- .env '**/.env'` → empty: no real `.env` was ever
+  tracked in history. No security-incident/rotation action required.
+- `.gitignore` verified: ignores `.env`, `.env.*` (with `!.env.example` /
+  `!.env.*.example` exceptions), `local.db`/`local.db-journal`/`local.db-wal`/
+  `local.db-shm`/`*.db*`, `DoneClaim`, `evidence-*.txt`, `learning-*.md`,
+  `t[0-9]*-*.txt`, `t[0-9]*-*.md`, `/.omo`, `.codegraph`, `dist`, buildinfo,
+  OS junk (`.DS_Store`, `Thumbs.db`), and `*.tmp`/`tmp/` patterns.
+- `.env.example`, `.env.local.example`, `.env.staging.example`,
+  `.env.production.example` all remain present and unmodified.
+- Variable-name reconciliation vs `src/config/env.validation.ts`: MATCH — every
+  validated variable (`JWT_SECRET`, `FRONTEND_URL`, `PORT`, `APP_ENV`,
+  `DB_DRIVER`, `STORAGE_DRIVER`, `CLOUDFLARE_ACCOUNT_ID`,
+  `CLOUDFLARE_D1_DATABASE_ID`, `CLOUDFLARE_API_TOKEN`, `R2_ENDPOINT`,
+  `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`) appears in the
+  example files. No silent source edits were made.
+- FLAG (informational, no action by T12): `CORS_ALLOWED_ORIGINS` is consumed by
+  `src/config/cors.ts` (falls back to `FRONTEND_URL`, then the local dev
+  origin, so bootstrapping is unaffected) but is documented in none of the
+  four example files. Owner/docs task should add it to `.env.staging.example`
+  and `.env.production.example` alongside the DL-027 final-origin decision.
