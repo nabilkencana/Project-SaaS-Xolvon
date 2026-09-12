@@ -11,6 +11,9 @@ import { CollectiveModule } from './collective/collective.module';
 import { AuditModule } from './audit/audit.module';
 import { HomeModule } from './home/home.module';
 import { MarketplaceModule } from './marketplace/marketplace.module';
+import { ProjectsModule } from './projects/projects.module';
+import { ProjectMediaModule } from './project-media/project-media.module';
+import { ProjectMembersModule } from './project-members/project-members.module';
 import { LessonsModule } from './lessons/lessons.module';
 import { CourseResourcesModule } from './course-resources/course-resources.module';
 import { validateEnvironment } from './config/env.validation';
@@ -29,10 +32,13 @@ import { validateEnvironment } from './config/env.validation';
     CoursesModule,
     HomeModule,
     MarketplaceModule,
-    LessonsModule,
-    CourseResourcesModule,
     AuditModule,
     CollectiveModule,
+    ProjectsModule,
+    ProjectMediaModule,
+    ProjectMembersModule,
+    LessonsModule,
+    CourseResourcesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

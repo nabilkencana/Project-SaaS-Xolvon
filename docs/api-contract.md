@@ -76,6 +76,27 @@ status}`.
 | POST | `/api/collective/:id/publish` | Bearer JWT | admin | aktif | Set status `published` + audit `publish` | - | `CollectiveMemberResponseDto` (200) |
 | POST | `/api/collective/:id/unpublish` | Bearer JWT | admin | aktif | Set status `draft` + audit `unpublish` | - | `CollectiveMemberResponseDto` (200) |
 
+### Projects (`src/projects/projects.controller.ts`, `src/project-media/`, `src/project-members/`)
+
+| Method | Path | Auth | Role | Status | Deskripsi | Request | Response |
+|---|---|---|---|---|---|---|---|
+| GET | `/api/projects` | Public | - | aktif | Portfolio published-only, `?q=` contains pada title/summary, `?sort=latest\|oldest` (default latest), pagination DL-011 | - | `{items: ProjectCardDto[], page, limit, total}` (200) |
+| GET | `/api/projects/:slug` | Public | - | aktif | Detail published-only (draft → 404, sama seperti slug tak dikenal); urutan cerita Problem→Solution→Tech Stack→Result→Media (`sort_order` ASC, video dan object key dieksklusi) → `members[].role` dari JOIN `collective_members` (SCHEMA.md §47-48) | - | `ProjectDetailDto` (200) / 404 |
+| POST | `/api/projects` | Bearer JWT | admin | aktif | Buat project (status awal `draft`) + audit `create`; slug unik; `type` string terkontrol (bukan enum final) | `CreateProjectDto` | `ProjectResponseDto` (201) |
+| PATCH | `/api/projects/:id` | Bearer JWT | admin | aktif | Update parsial + audit `update`; slug baru dicek unik | `UpdateProjectDto` | `ProjectResponseDto` (200) |
+| POST | `/api/projects/:id/publish` | Bearer JWT | admin | aktif | Transisi ketat draft → published, gate field wajib (title, slug, type, summary, problem, solution) + audit `publish` | - | `ProjectResponseDto` (200) |
+| POST | `/api/projects/:id/unpublish` | Bearer JWT | admin | aktif | Transisi ketat published → draft + audit `unpublish` | - | `ProjectResponseDto` (200) |
+| POST | `/api/projects/:id/media` | Bearer JWT | admin | aktif | Attach media (objectKey, `mediaType` string terkontrol — enum final open decision DL-014, `sortOrder`) + audit `create` | `AttachProjectMediaDto` | `ProjectMediaResponseDto` (201) |
+| DELETE | `/api/projects/:id/media/:mediaId` | Bearer JWT | admin | aktif | Detach media ter-scope ke project (lintas project → 404) + audit `delete` | - | `{message}` (200) |
+| POST | `/api/projects/:id/members` | Bearer JWT | admin | aktif | Assign collective member dengan role eksplisit (upsert `ON CONFLICT(project_id, member_id)`); `role` string terkontrol (bukan enum final) + audit `create` | `AssignProjectMemberDto` | `{projectId, memberId, role}` (201) |
+| DELETE | `/api/projects/:id/members/:memberId` | Bearer JWT | admin | aktif | Remove assignment member ter-scope ke project + audit `delete` | - | `{message}` (200) |
+
+`ProjectCardDto` (SCHEMA.md §46): `{id, title, slug, type, summary, status}`.
+`ProjectDetailDto` (§47, urutan cerita §48): `{id, title, slug, type, summary,
+problem, solution, techStack: string[], result, media: {id, mediaType,
+sortOrder}[], members: {memberId, name, role}[], status}` — media publik
+tanpa `objectKey`, video dieksklusi (butuh signed private access, T13/T14).
+
 ### Admin — belum ada
 
 `AdminModule` berupa stub tanpa endpoint. Endpoint admin (`GET /admin/users`,
@@ -102,11 +123,12 @@ endpoint publish/unpublish.
 Belum ada endpoint. CRUD admin untuk lesson (`order_index`, draft/published)
 dan resource `pdf|resource|assignment`; summary publik tanpa field privat.
 
-### Projects / Project Media / Project Members — planned (T7)
+### Projects / Project Media / Project Members — aktif (T7)
 
-Belum ada endpoint. Portfolio published-only + search/filter; detail
-Problem→Solution→Tech Stack→Result→Screenshot + "Built by"; admin CRUD/attach/
-detach/assign + audit.
+Endpoint sudah pindah ke tabel aktif di atas. `type` (project), `mediaType`
+(media), dan `role` (member) divalidasi sebagai string terkontrol dengan
+batas panjang — BUKAN enum final (SCHEMA.md §45/§50/§52; open decision
+DL-014). Object key media privat tidak pernah muncul di respons publik.
 
 ### Collective — aktif (T8)
 

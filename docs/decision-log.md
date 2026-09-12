@@ -428,6 +428,44 @@ kontrak respons. Kepatuhan MarketplaceModule sebagai showcase murni (tanpa
 pembayaran/transaksi, SCHEMA.md §60) tetap berlaku.
 ```
 
+### DL-014 — `type`/`mediaType`/`role` portfolio sebagai string terkontrol (enum final tetap OPEN)
+
+```text
+Problem:
+Plan T7 membangun modul Portfolio, tetapi SCHEMA.md §45 (project.type),
+§50 (project_media.media_type), dan §52 (project_members.role) menegaskan
+enumerasi final belum diputuskan dan melarang mengarang enum sendiri
+(RULES.md §84:2340-2366). Implementasi tetap butuh aturan validasi minimal.
+
+Existing Requirement:
+SCHEMA.md §45/§50/§52; RULES.md §84; plan T7; PRD §26-30.
+
+Options:
+- Mengarang enum final (dilarang SCHEMA.md — DO NOT INVENT).
+- Menunda modul sampai enum final (memblokir T7 tanpa dasar owner).
+- String terkontrol: wajib string non-kosong dengan batas panjang; nilai
+  bebas sampai enum final dikunci owner.
+
+Owner:
+Backend (default adopted, track owner sign-off)
+
+Decision:
+`type`, `mediaType`, dan `role` divalidasi sebagai string terkontrol
+(@IsString + @IsNotEmpty + @MaxLength: type 100, mediaType 50, role 100)
+di CreateProjectDto/AttachProjectMediaDto/AssignProjectMemberDto — TIDAK
+ada @IsEnum. Enumerasi final TETAP OPEN (indeks "Keputusan masih terbuka");
+menguncinya nanti hanya menambah validator di DTO tanpa mengubah kontrak
+respons maupun query.
+
+Date:
+2026-09-12
+
+Impact:
+T7 selesai tanpa asumsi enum; media publik tetap dieksklusi video/object
+key; perubahan nilai setelah enum final dikunci owner wajib lewat entri
+decision log baru.
+```
+
 ---
 
 ## Konflik dokumen (tercatat + resolusinya)
@@ -458,6 +496,6 @@ diputuskan (tidak ada entri placeholder di log ini):
 - PRD §91.9 — legal copy (Terms/Privacy/Disclaimer).
 - PRD §91.10 — jumlah konten awal.
 - PRD §91.12 — analytics provider pihak ketiga.
-- Plan T7 — enum `type` media project.
+- Plan T7 — enum `type` media project (string terkontrol diadopsi di DL-014; enumerasi final masih terbuka).
 - Plan T9 — governance `external_url` marketplace (validasi minimal https diadopsi di DL-013; approval/allowlist/management masih terbuka).
 - Plan T12 — kolom WhatsApp/proof pada tabel admin.

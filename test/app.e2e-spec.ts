@@ -1118,6 +1118,281 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
       expect(auditSql).toContain('INSERT INTO admin_audit_logs');
     });
   });
+
+  describe('projects — portfolio, media, and members (SCHEMA.md §43-53)', () => {
+    const adminToken = () =>
+      signToken({
+        sub: 'admin-uuid-1',
+        email: 'admin@example.com',
+        role: 'admin',
+      });
+
+    const userToken = () =>
+      signToken({
+        sub: 'user-uuid-1',
+        email: 'e2e.user@example.com',
+        role: 'user',
+      });
+
+    const projectId = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+    const memberId = '11111111-1111-4111-8111-111111111111';
+
+    const draftProjectRow = {
+      id: projectId,
+      title: 'Draft Project',
+      slug: 'draft-project',
+      type: null,
+      summary: null,
+      problem: null,
+      solution: null,
+      tech_stack: null,
+      result: null,
+      status: 'draft',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    it('GET /api/projects returns published-only cards with the DL-011 pagination contract', async () => {
+      dbQueryAll.mockResolvedValueOnce([
+        {
+          id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+          title: 'Xolvon Dashboard',
+          slug: 'xolvon-dashboard',
+          type: 'web-app',
+          summary: 'Internal analytics dashboard.',
+          status: 'published',
+        },
+      ]);
+      dbQueryOne.mockResolvedValueOnce({ total: 1 });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/projects')
+        .expect(200);
+
+      expect(res.body).toMatchObject({ page: 1, limit: 20, total: 1 });
+      expect(res.body.items).toEqual([
+        {
+          id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+          title: 'Xolvon Dashboard',
+          slug: 'xolvon-dashboard',
+          type: 'web-app',
+          summary: 'Internal analytics dashboard.',
+          status: 'published',
+        },
+      ]);
+
+      const [listSql] = dbQueryAll.mock.calls[0];
+      expect(listSql).toContain("status = 'published'");
+    });
+
+    it('GET /api/projects/:slug returns the detail with members[].role and media without object keys', async () => {
+      dbQueryOne.mockResolvedValueOnce({
+        ...draftProjectRow,
+        slug: 'xolvon-dashboard',
+        title: 'Xolvon Dashboard',
+        type: 'web-app',
+        summary: 'Internal analytics dashboard.',
+        problem: 'Data scattered across tools.',
+        solution: 'Single source of truth dashboard.',
+        tech_stack: 'Next.js, TypeScript',
+        result: 'Reduced reporting time.',
+        status: 'published',
+      });
+      dbQueryAll
+        .mockResolvedValueOnce([
+          {
+            id: '8c9e6679-7425-40de-944b-e07fc1f90ae7',
+            project_id: projectId,
+            object_key: 'projects/shot-1.png',
+            media_type: 'image',
+            sort_order: 1,
+          },
+        ])
+        .mockResolvedValueOnce([
+          { member_id: memberId, name: 'Nabil', role: 'BE' },
+        ]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/projects/xolvon-dashboard')
+        .expect(200);
+
+      expect(res.body).toMatchObject({
+        slug: 'xolvon-dashboard',
+        problem: 'Data scattered across tools.',
+        solution: 'Single source of truth dashboard.',
+        techStack: ['Next.js', 'TypeScript'],
+        result: 'Reduced reporting time.',
+        status: 'published',
+      });
+      expect(res.body.media).toEqual([
+        { id: '8c9e6679-7425-40de-944b-e07fc1f90ae7', mediaType: 'image', sortOrder: 1 },
+      ]);
+      expect(res.body.members).toEqual([
+        { memberId, name: 'Nabil', role: 'BE' },
+      ]);
+
+      // Private storage keys never leave the public API.
+      const bodyText = JSON.stringify(res.body);
+      expect(bodyText).not.toContain('projects/shot-1.png');
+      expect(bodyText).not.toContain('objectKey');
+
+      const [mediaSql] = dbQueryAll.mock.calls[0];
+      expect(mediaSql).toContain('ORDER BY sort_order ASC');
+      const [membersSql] = dbQueryAll.mock.calls[1];
+      expect(membersSql).toContain('JOIN collective_members');
+    });
+
+    it('GET /api/projects/:slug returns 404 for a draft project', async () => {
+      dbQueryOne.mockResolvedValueOnce(draftProjectRow);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/projects/draft-project')
+        .expect(404);
+
+      expect(res.body.message).toBe('Project not found.');
+    });
+
+    it('rejects create from a non-admin with 403', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/projects')
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .send({
+          title: 'Some Project',
+          slug: 'some-project',
+        })
+        .expect(403);
+
+      expect(res.body.message).toBe(
+        'You do not have permission to access this resource.',
+      );
+      expectDbUnused();
+    });
+
+    it('rejects create without authentication with 401', async () => {
+      await request(app.getHttpServer())
+        .post('/api/projects')
+        .send({
+          title: 'Some Project',
+          slug: 'some-project',
+        })
+        .expect(401);
+      expectDbUnused();
+    });
+
+    it('creates a draft project as admin and audits the create action', async () => {
+      dbQueryOne.mockResolvedValueOnce(undefined); // slug available
+
+      const res = await request(app.getHttpServer())
+        .post('/api/projects')
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({
+          title: 'Xolvon Dashboard',
+          slug: 'xolvon-dashboard',
+          type: 'web-app',
+          summary: 'Internal analytics dashboard.',
+          problem: 'Data scattered across tools.',
+          solution: 'Single source of truth dashboard.',
+          techStack: 'Next.js, TypeScript',
+        })
+        .expect(201);
+
+      expect(res.body).toMatchObject({
+        title: 'Xolvon Dashboard',
+        slug: 'xolvon-dashboard',
+        techStack: ['Next.js', 'TypeScript'],
+        status: 'draft',
+      });
+
+      const [projectSql] = dbExecute.mock.calls[0];
+      expect(projectSql).toContain('INSERT INTO projects');
+      expect(projectSql).toContain("'draft'");
+
+      const [auditSql] = dbExecute.mock.calls[1];
+      expect(auditSql).toContain('INSERT INTO admin_audit_logs');
+    });
+
+    it('publishes a draft project and audits the publish action', async () => {
+      dbQueryOne.mockResolvedValueOnce({
+        ...draftProjectRow,
+        type: 'web-app',
+        summary: 'Internal analytics dashboard.',
+        problem: 'Data scattered across tools.',
+        solution: 'Single source of truth dashboard.',
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/projects/${projectId}/publish`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .expect(200);
+
+      expect(res.body).toMatchObject({ id: projectId, status: 'published' });
+
+      const [updateSql] = dbExecute.mock.calls[0];
+      expect(updateSql).toContain("UPDATE projects SET status = 'published'");
+      const [auditSql] = dbExecute.mock.calls[1];
+      expect(auditSql).toContain('INSERT INTO admin_audit_logs');
+    });
+
+    it('attaches media as admin and audits the create action', async () => {
+      dbQueryOne.mockResolvedValueOnce({ id: projectId }); // project exists
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/projects/${projectId}/media`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({
+          objectKey: 'projects/shot-1.png',
+          mediaType: 'image',
+          sortOrder: 1,
+        })
+        .expect(201);
+
+      expect(res.body).toMatchObject({
+        projectId,
+        objectKey: 'projects/shot-1.png',
+        mediaType: 'image',
+        sortOrder: 1,
+      });
+
+      const [mediaSql] = dbExecute.mock.calls[0];
+      expect(mediaSql).toContain('INSERT INTO project_media');
+      const [auditSql] = dbExecute.mock.calls[1];
+      expect(auditSql).toContain('INSERT INTO admin_audit_logs');
+    });
+
+    it('assigns a collective member with an explicit role as admin and audits the action', async () => {
+      dbQueryOne
+        .mockResolvedValueOnce({ id: projectId }) // project exists
+        .mockResolvedValueOnce({ id: memberId }); // member exists
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/projects/${projectId}/members`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({ memberId, role: 'BE' })
+        .expect(201);
+
+      expect(res.body).toEqual({ projectId, memberId, role: 'BE' });
+
+      const [memberSql] = dbExecute.mock.calls[0];
+      expect(memberSql).toContain('INSERT INTO project_members');
+      expect(memberSql).toContain('ON CONFLICT(project_id, member_id)');
+      const [auditSql] = dbExecute.mock.calls[1];
+      expect(auditSql).toContain('INSERT INTO admin_audit_logs');
+    });
+
+    it('rejects media attach from a non-admin with 403', async () => {
+      const res = await request(app.getHttpServer())
+        .post(`/api/projects/${projectId}/media`)
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .send({ objectKey: 'projects/shot.png', mediaType: 'image' })
+        .expect(403);
+
+      expect(res.body.message).toBe(
+        'You do not have permission to access this resource.',
+      );
+      expectDbUnused();
+    });
+  });
+
   describe('lessons + course resources (SCHEMA.md §18-26, §167-168)', () => {
     const adminToken = () =>
       signToken({
