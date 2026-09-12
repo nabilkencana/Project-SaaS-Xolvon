@@ -9,6 +9,7 @@ import { AppModule } from '../src/app.module';
 import { DatabaseService } from '../src/database/database.service';
 import { PasswordService } from '../src/auth/password.service';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
+import { resolveTrustProxyHops } from '../src/config/trust-proxy';
 import type { JwtPayload } from '../src/auth/interfaces/jwt-payload.interface';
 
 describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
@@ -2391,6 +2392,205 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
       );
       expect(JSON.stringify(response.body)).not.toContain('top-secret');
       expect(JSON.stringify(response.body)).not.toContain('at ');
+    });
+  });
+
+  describe('T6 named throttle groups (per-surface 429 limits)', () => {
+    let groupApp: INestApplication<App>;
+    const lessonId = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+
+    // Dedicated app instance: the in-memory throttler storage is per-app, so
+    // the bursts below cannot exhaust (or be exhausted by) the shared `app`
+    // counters used by the rest of this suite.
+    beforeAll(async () => {
+      const moduleFixture: TestingModule = await Test.createTestingModule({
+        imports: [AppModule],
+      })
+        .overrideProvider(DatabaseService)
+        // Persistent benign fixtures: every public read succeeds with an
+        // empty published set, so any 429 can only come from the throttler.
+        .useValue({
+          queryAll: jest.fn(async () => []),
+          queryOne: jest.fn(async () => ({ total: 0 })),
+          execute: jest.fn(async () => undefined),
+        })
+        .overrideProvider(PasswordService)
+        .useValue({
+          hash: jest.fn(async () => 'hashed-password'),
+          verify: jest.fn(async () => false),
+        })
+        .compile();
+
+      groupApp = moduleFixture.createNestApplication();
+      groupApp.setGlobalPrefix('api');
+      groupApp.useGlobalPipes(
+        new ValidationPipe({
+          whitelist: true,
+          forbidNonWhitelisted: true,
+          transform: true,
+        }),
+      );
+      groupApp.useGlobalFilters(new AllExceptionsFilter());
+      // Mirror the proxied deployment (D1/Cloudflare): client-IP resolution
+      // for throttling comes from req.ip, which Express derives from
+      // X-Forwarded-For only when trust proxy is configured.
+      groupApp.set('trust proxy', resolveTrustProxyHops('1'));
+      await groupApp.init();
+    });
+
+    afterAll(async () => {
+      await groupApp.close();
+    });
+
+    /**
+     * Sends `count` requests from one (spoofable) client IP and returns every
+     * status code. TEST-NET ranges (RFC 5737) keep buckets collision-free.
+     */
+    async function burst(
+      method: 'get' | 'post',
+      path: string,
+      count: number,
+      clientIp: string,
+      body?: object,
+    ): Promise<number[]> {
+      const server = groupApp.getHttpServer();
+      const statuses: number[] = [];
+      for (let i = 0; i < count; i++) {
+        const req = request(server)[method](path).set('X-Forwarded-For', clientIp);
+        if (body) req.send(body);
+        const res = await req;
+        statuses.push(res.status);
+      }
+      return statuses;
+    }
+
+    it('caps public search at 30/min per IP: 30 pass, the 31st is a 429 with the search-group budget', async () => {
+      const ip = '203.0.113.11';
+      const ok = await burst('get', '/api/search?q=x', 30, ip);
+      expect(ok).toEqual(expect.arrayContaining([200]));
+      expect(ok.every((s) => s === 200)).toBe(true);
+
+      const server = groupApp.getHttpServer();
+      const probe = await request(server)
+        .get('/api/search?q=x')
+        .set('X-Forwarded-For', ip)
+        .expect(429);
+      expect(probe.body.statusCode).toBe(429);
+      expect(probe.body.message).toBe('ThrottlerException: Too Many Requests');
+      expect(probe.headers['retry-after-search']).toBeDefined();
+    });
+
+    it('exposes the search-group 30/min and default 100/min headers side by side below the limit', async () => {
+      const res = await request(groupApp.getHttpServer())
+        .get('/api/search?q=isolated')
+        .set('X-Forwarded-For', '203.0.113.111')
+        .expect(200);
+      expect(res.headers['x-ratelimit-limit']).toBe('100');
+      expect(res.headers['x-ratelimit-limit-search']).toBe('30');
+    });
+
+    it('caps every public catalog list at 30/min per IP (courses burst proves enforcement; sibling lists prove the wiring)', async () => {
+      const ip = '203.0.113.12';
+      const ok = await burst('get', '/api/courses', 30, ip);
+      expect(ok.every((s) => s === 200)).toBe(true);
+      const burst1 = await burst('get', '/api/courses', 1, ip);
+      expect(burst1).toEqual([429]);
+
+      // Same named group, per-route counters: each list advertises the 30/min
+      // catalog budget while its default tracker stays at 100/min.
+      for (const path of ['/api/projects', '/api/marketplace', '/api/collective', '/api/home']) {
+        const res = await request(groupApp.getHttpServer())
+          .get(path)
+          .set('X-Forwarded-For', `203.0.113.9${path.length}`)
+          .expect(200);
+        expect(res.headers['x-ratelimit-limit-catalog']).toBe('30');
+      }
+    });
+
+    it('caps signed video URLs at 10/min per IP', async () => {
+      const ip = '203.0.113.13';
+      const statuses = await burst('get', `/api/lessons/${lessonId}/video-url`, 10, ip);
+      // Requests 1..10 pass the throttler (401 from AuthGuard), proving the
+      // tighter budget applies before auth instead of replacing it.
+      expect(statuses).toEqual(Array(10).fill(401));
+      const probe = await request(groupApp.getHttpServer())
+        .get(`/api/lessons/${lessonId}/video-url`)
+        .set('X-Forwarded-For', ip);
+      expect(probe.status).toBe(429);
+      expect(probe.headers['retry-after-signed']).toBeDefined();
+    });
+
+    it('caps admin media URL generation at 10/min per IP (upload-url and read-url share the signed budget shape)', async () => {
+      for (const [path, ip] of [
+        ['/api/admin/media/upload-url', '203.0.113.14'],
+        ['/api/admin/media/read-url', '203.0.113.15'],
+      ] as const) {
+        const statuses = await burst('post', path, 10, ip, { key: 'x' });
+        expect(statuses).toEqual(Array(10).fill(401));
+        const probe = await request(groupApp.getHttpServer())
+          .post(path)
+          .set('X-Forwarded-For', ip)
+          .send({ key: 'x' });
+        expect(probe.status).toBe(429);
+        expect(probe.headers['retry-after-signed']).toBeDefined();
+      }
+    });
+
+    it('caps order creation at 10/min per IP while the auth 5/min override stays stricter on login', async () => {
+      const ip = '203.0.113.16';
+      const checkout = { courseIds: ['0b9e6b5e-1111-4222-8333-444455556666'] };
+      const statuses = await burst('post', '/api/orders', 10, ip, checkout);
+      expect(statuses).toEqual(Array(10).fill(401));
+      const probe = await request(groupApp.getHttpServer())
+        .post('/api/orders')
+        .set('X-Forwarded-For', ip)
+        .send(checkout);
+      expect(probe.status).toBe(429);
+      expect(probe.headers['retry-after-order']).toBeDefined();
+
+      // Sibling order routes are NOT part of the order group: verify keeps
+      // the historical 100/min default.
+      const sibling = await request(groupApp.getHttpServer())
+        .post(`/api/orders/0b9e6b5e-1111-4222-8333-444455556666/verify`)
+        .set('X-Forwarded-For', '203.0.113.17');
+      expect(sibling.headers['x-ratelimit-limit-order']).toBe('100');
+    });
+
+    it('never throttles GET /api health even far beyond every declared limit (105 consecutive 200s)', async () => {
+      const statuses = await burst('get', '/api', 105, '203.0.113.18');
+      expect(statuses).toEqual(Array(105).fill(200));
+    });
+
+    it('preserves the DL-012 auth 5/min login override alongside the new groups (401×5 then 429)', async () => {
+      const ip = '203.0.113.19';
+      const badLogin = { email: 'ghost@example.com', password: 'whatever1' };
+      const first = await request(groupApp.getHttpServer())
+        .post('/api/auth/login')
+        .set('X-Forwarded-For', ip)
+        .send(badLogin)
+        .expect(401);
+      expect(first.headers['x-ratelimit-limit']).toBe('5');
+      const more = await burst('post', '/api/auth/login', 4, ip, badLogin);
+      expect(more).toEqual(Array(4).fill(401));
+      const probe = await request(groupApp.getHttpServer())
+        .post('/api/auth/login')
+        .set('X-Forwarded-For', ip)
+        .send(badLogin);
+      expect(probe.status).toBe(429);
+    });
+
+    it('isolates counters per client IP under trust proxy (exhausted IP is 429, fresh IP passes)', async () => {
+      const exhausted = await burst('get', '/api/search?q=isolation', 30, '203.0.113.20');
+      expect(exhausted.every((s) => s === 200)).toBe(true);
+      const stillBlocked = await request(groupApp.getHttpServer())
+        .get('/api/search?q=isolation')
+        .set('X-Forwarded-For', '203.0.113.20');
+      expect(stillBlocked.status).toBe(429);
+      const freshIp = await request(groupApp.getHttpServer())
+        .get('/api/search?q=isolation')
+        .set('X-Forwarded-For', '203.0.113.21')
+        .expect(200);
+      expect(freshIp.headers['x-ratelimit-remaining-search']).toBe('29');
     });
   });
 });

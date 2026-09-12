@@ -20,6 +20,7 @@ import { LessonsModule } from './lessons/lessons.module';
 import { CourseResourcesModule } from './course-resources/course-resources.module';
 import { AdminModule } from './admin/admin.module';
 import { validateEnvironment } from './config/env.validation';
+import { throttlerOptions } from './config/throttle.config';
 import { MediaModule } from './media/media.module';
 import { ProgressModule } from './progress/progress.module';
 import { SearchModule } from './search/search.module';
@@ -33,8 +34,12 @@ import { RequestIntegrityGuard } from './common/guards/request-integrity.guard';
       validate: validateEnvironment,
     }),
     // Global default: 100 req/min per IP per route (generous). Auth routes
-    // tighten to 5/min via @Throttle in AuthController (DL-012).
-    ThrottlerModule.forRoot([{ name: 'default', ttl: 60000, limit: 100 }]),
+    // tighten to 5/min via @Throttle in AuthController (DL-012). T6 adds the
+    // named abuse-surface groups (search/catalog/signed/order) registered at
+    // the benign 100/min placeholder and tightened per handler — see
+    // src/config/throttle.config.ts for why module-level registration is
+    // required and why the tight values must NOT live here.
+    ThrottlerModule.forRoot(throttlerOptions),
     DatabaseModule,
     AuthModule,
     EnrollmentsModule,
