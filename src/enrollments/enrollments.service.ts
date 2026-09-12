@@ -4,13 +4,17 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'node:crypto';
 import { DatabaseService } from '../database/database.service';
+import { AuditService } from '../audit/audit.service';
 import type { EnrollmentRow } from './interfaces/enrollment.interface';
 import { EnrollmentResponseDto } from './dto/enrollment-response.dto';
 import { toEnrollmentResponse } from './mappers/enrollment.mapper';
 
 @Injectable()
 export class EnrollmentsService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly audit: AuditService,
+  ) {}
 
   /**
    * Reusable entitlement check to verify if a user has an active, unexpired enrollment for a course.
@@ -75,7 +79,7 @@ export class EnrollmentsService {
    * Preserves operational history without deleting rows (audit trail).
    */
   async revokeEnrollment(
-    _adminId: string,
+    adminId: string,
     enrollmentId: string,
   ): Promise<EnrollmentResponseDto> {
     const current = await this.db.queryOne<EnrollmentRow>(
@@ -93,6 +97,11 @@ export class EnrollmentsService {
       `UPDATE enrollments SET status = 'revoked', revoked_at = ? WHERE id = ?;`,
       [now, enrollmentId],
     );
+
+    await this.audit.record(adminId, 'revoke', 'enrollment', enrollmentId, {
+      status: 'active -> revoked',
+      orderId: current.order_id,
+    });
 
     return toEnrollmentResponse({
       ...current,

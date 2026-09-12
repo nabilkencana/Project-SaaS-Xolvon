@@ -7,6 +7,7 @@ import {
 import * as crypto from 'node:crypto';
 import { DatabaseService } from '../database/database.service';
 import { EnrollmentsService } from '../enrollments/enrollments.service';
+import { AuditService } from '../audit/audit.service';
 import type { OrderRow } from './interfaces/order.interface';
 import type { OrderItemRow } from './interfaces/order-item.interface';
 import type { CreateOrderDto } from './dto/create-order.dto';
@@ -22,6 +23,7 @@ export class OrdersService {
   constructor(
     private readonly db: DatabaseService,
     private readonly enrollmentsService: EnrollmentsService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -261,6 +263,10 @@ export class OrdersService {
       updated_at: now,
     };
 
+    await this.audit.record(adminId, 'verify', 'order', orderId, {
+      status: 'pending -> paid',
+    });
+
     return toOrderResponse(updatedOrder, items);
   }
 
@@ -307,10 +313,51 @@ export class OrdersService {
       adminId,
     );
 
+    await this.audit.record(adminId, 'activate', 'order', orderId, {
+      activatedCoursesCount: count,
+    });
+
     return new OrderActivationResponseDto({
       message: 'Enrollment berhasil diaktivasi.',
       orderId,
       activatedCoursesCount: count,
     });
+  }
+
+  async cancelOrder(adminId: string, orderId: string): Promise<OrderResponseDto> {
+    const order = await this.db.queryOne<OrderRow>(
+      'SELECT * FROM orders WHERE id = ? LIMIT 1;',
+      [orderId],
+    );
+
+    if (!order) {
+      throw new NotFoundException('Order tidak ditemukan.');
+    }
+
+    if (order.status !== 'pending') {
+      throw new BadRequestException(
+        'Hanya order berstatus pending yang dapat dibatalkan.',
+      );
+    }
+
+    const now = new Date().toISOString();
+    await this.db.execute(
+      `UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ?;`,
+      [now, orderId],
+    );
+
+    const items = await this.db.queryAll<OrderItemRow>(
+      'SELECT * FROM order_items WHERE order_id = ?;',
+      [orderId],
+    );
+
+    await this.audit.record(adminId, 'cancel', 'order', orderId, {
+      status: 'pending -> cancelled',
+    });
+
+    return toOrderResponse(
+      { ...order, status: 'cancelled', updated_at: now },
+      items,
+    );
   }
 }

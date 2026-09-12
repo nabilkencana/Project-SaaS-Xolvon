@@ -15,6 +15,7 @@ describe('OrdersController', () => {
       submitPaymentProof: jest.fn(),
       verifyOrder: jest.fn(),
       activateOrder: jest.fn(),
+      cancelOrder: jest.fn(),
     } as unknown as jest.Mocked<OrdersService>;
 
     controller = new OrdersController(mockOrdersService);
@@ -96,5 +97,25 @@ describe('OrdersController', () => {
 
     expect(result).toBe(mockResponse);
     expect(mockOrdersService.activateOrder).toHaveBeenCalledWith('admin-1', 'ord-1');
+  });
+
+  it('should call cancelOrder on service', async () => {
+    const mockResponse = new OrderResponseDto({
+      id: 'ord-1',
+      status: 'cancelled',
+      amount: 100000,
+      notes: '',
+      items: [],
+      createdAt: '2026-09-04T00:00:00.000Z',
+      updatedAt: '2026-09-04T00:00:00.000Z',
+      verifiedAt: null,
+    });
+
+    mockOrdersService.cancelOrder.mockResolvedValueOnce(mockResponse);
+
+    const result = await controller.cancelOrder('admin-1', 'ord-1');
+
+    expect(result).toBe(mockResponse);
+    expect(mockOrdersService.cancelOrder).toHaveBeenCalledWith('admin-1', 'ord-1');
   });
 });

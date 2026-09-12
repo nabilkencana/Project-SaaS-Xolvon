@@ -83,4 +83,15 @@ export class OrdersController {
   ): Promise<OrderActivationResponseDto> {
     return this.ordersService.activateOrder(adminId, orderId);
   }
+
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('admin')
+  @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  async cancelOrder(
+    @CurrentUser('sub') adminId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) orderId: string,
+  ): Promise<OrderResponseDto> {
+    return this.ordersService.cancelOrder(adminId, orderId);
+  }
 }

@@ -674,11 +674,51 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
       expect(res.body.verifiedAt).toBeDefined();
       expect(res.body).not.toHaveProperty('verified_by');
 
-      expect(dbExecute).toHaveBeenCalledTimes(1);
+      expect(dbExecute).toHaveBeenCalledTimes(2);
       const [updateSql, updateParams] = dbExecute.mock.calls[0];
       expect(updateSql).toContain("UPDATE orders SET status = 'paid'");
       expect(updateParams[0]).toBe('admin-uuid-1');
       expect(updateParams[3]).toBe(orderId);
+      expect(dbExecute.mock.calls[1][0]).toContain('INSERT INTO admin_audit_logs');
+    });
+
+    it('cancels a pending order and writes an audit row', async () => {
+      dbQueryOne.mockResolvedValueOnce(pendingOrderRow);
+      dbQueryAll.mockResolvedValueOnce([
+        {
+          id: 'it-1',
+          order_id: orderId,
+          course_id: 'course-1',
+          price: 150000,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/orders/${orderId}/cancel`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .expect(200);
+
+      expect(res.body).toMatchObject({ id: orderId, status: 'cancelled' });
+      expect(dbExecute).toHaveBeenCalledTimes(2);
+      expect(dbExecute.mock.calls[0][0]).toContain(
+        "UPDATE orders SET status = 'cancelled'",
+      );
+      expect(dbExecute.mock.calls[1][0]).toContain('INSERT INTO admin_audit_logs');
+    });
+
+    it('rejects cancellation of a paid order without writing', async () => {
+      dbQueryOne.mockResolvedValueOnce({ ...pendingOrderRow, status: 'paid' });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/orders/${orderId}/cancel`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .expect(400);
+
+      expect(res.body.message).toBe(
+        'Hanya order berstatus pending yang dapat dibatalkan.',
+      );
+      expect(dbExecute).not.toHaveBeenCalled();
     });
 
     it('rejects verification of an already paid order with 400', async () => {

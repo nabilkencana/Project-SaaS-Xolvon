@@ -1,11 +1,13 @@
 import { NotFoundException } from '@nestjs/common';
 import { EnrollmentsService } from './enrollments.service';
 import { DatabaseService } from '../database/database.service';
+import { AuditService } from '../audit/audit.service';
 import type { EnrollmentRow } from './interfaces/enrollment.interface';
 
 describe('EnrollmentsService', () => {
   let service: EnrollmentsService;
   let mockDb: { queryAll: jest.Mock; queryOne: jest.Mock; execute: jest.Mock };
+  let mockAuditService: jest.Mocked<AuditService>;
 
   beforeEach(() => {
     mockDb = {
@@ -14,7 +16,11 @@ describe('EnrollmentsService', () => {
       execute: jest.fn(),
     };
 
-    service = new EnrollmentsService(mockDb as unknown as DatabaseService);
+    mockAuditService = { record: jest.fn() } as unknown as jest.Mocked<AuditService>;
+    service = new EnrollmentsService(
+      mockDb as unknown as DatabaseService,
+      mockAuditService,
+    );
   });
 
   afterEach(() => {
@@ -121,6 +127,13 @@ describe('EnrollmentsService', () => {
         1,
         expect.stringContaining("UPDATE enrollments SET status = 'revoked'"),
         [expect.any(String), 'en-1'],
+      );
+      expect(mockAuditService.record).toHaveBeenCalledWith(
+        'admin-1',
+        'revoke',
+        'enrollment',
+        'en-1',
+        { status: 'active -> revoked', orderId: 'ord-1' },
       );
     });
   });

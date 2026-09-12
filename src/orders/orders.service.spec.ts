@@ -6,6 +6,7 @@ import {
 import { OrdersService } from './orders.service';
 import { DatabaseService } from '../database/database.service';
 import { EnrollmentsService } from '../enrollments/enrollments.service';
+import { AuditService } from '../audit/audit.service';
 import type { OrderRow } from './interfaces/order.interface';
 
 /**
@@ -20,6 +21,7 @@ describe('OrdersService', () => {
   let service: OrdersService;
   let mockDb: { queryAll: jest.Mock; queryOne: jest.Mock; execute: jest.Mock };
   let mockEnrollmentsService: jest.Mocked<EnrollmentsService>;
+  let mockAuditService: jest.Mocked<AuditService>;
 
   beforeEach(() => {
     mockDb = {
@@ -34,10 +36,12 @@ describe('OrdersService', () => {
       isUserEntitled: jest.fn(),
       revokeEnrollment: jest.fn(),
     } as unknown as jest.Mocked<EnrollmentsService>;
+    mockAuditService = { record: jest.fn() } as unknown as jest.Mocked<AuditService>;
 
     service = new OrdersService(
       mockDb as unknown as DatabaseService,
       mockEnrollmentsService,
+      mockAuditService,
     );
   });
 
@@ -252,6 +256,13 @@ describe('OrdersService', () => {
         expect.any(String),
         'ord-1',
       ]);
+      expect(mockAuditService.record).toHaveBeenCalledWith(
+        'admin-1',
+        'verify',
+        'order',
+        'ord-1',
+        { status: 'pending -> paid' },
+      );
     });
 
     it('should throw BadRequestException if order is already paid', async () => {
@@ -349,6 +360,54 @@ describe('OrdersService', () => {
       expect(
         mockEnrollmentsService.activateOrderEnrollments,
       ).toHaveBeenCalledWith('ord-1', 'user-1', ['c-1'], 'admin-1');
+      expect(mockAuditService.record).toHaveBeenCalledWith(
+        'admin-1',
+        'activate',
+        'order',
+        'ord-1',
+        { activatedCoursesCount: 1 },
+      );
+    });
+
+    it('should cancel a pending order and record the audit event', async () => {
+      mockDb.queryOne.mockResolvedValueOnce({
+        id: 'ord-1',
+        user_id: 'user-1',
+        status: 'pending',
+        amount: 150000,
+        notes: '',
+        verified_by: null,
+        verified_at: null,
+        created_at: '2026-09-04T00:00:00.000Z',
+        updated_at: '2026-09-04T00:00:00.000Z',
+      });
+      mockDb.queryAll.mockResolvedValueOnce([]);
+
+      const result = await service.cancelOrder('admin-1', 'ord-1');
+
+      expect(result.status).toBe('cancelled');
+      expect(mockDb.execute).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE orders SET status = 'cancelled'"),
+        [expect.any(String), 'ord-1'],
+      );
+      expect(mockAuditService.record).toHaveBeenCalledWith(
+        'admin-1',
+        'cancel',
+        'order',
+        'ord-1',
+        { status: 'pending -> cancelled' },
+      );
+    });
+
+    it('should reject cancellation unless the order is pending', async () => {
+      mockDb.queryOne.mockResolvedValueOnce({ id: 'ord-1', status: 'paid' });
+
+      await expect(service.cancelOrder('admin-1', 'ord-1')).rejects.toThrow(
+        new BadRequestException(
+          'Hanya order berstatus pending yang dapat dibatalkan.',
+        ),
+      );
+      expect(mockAuditService.record).not.toHaveBeenCalled();
     });
   });
 });
