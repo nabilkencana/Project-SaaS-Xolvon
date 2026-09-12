@@ -829,3 +829,94 @@ T12 must produce an explainable file-by-file cleanup diff and must leave require
 files intact. Any tracked environment secret requires separate incident handling,
 not silent cleanup.
 ```
+
+### DL-026 — DL-019 disposition: official PDF pipeline vs stray Python artifact
+
+```text
+Problem:
+DL-019 locked the official PDF workflow as Playwright/Chromium Markdown→PDF
+(`npm run docs:pdf` → `scripts/docs-pdf.mjs`, output `docs/pdf/*.pdf`, committed).
+Commit `9a6d1d7` ("feat: add throttle and trust proxy configurations with API
+documentation and Postman collection") arrived out-of-band and introduced two
+non-conforming artifacts: `scripts/generate-api-pdf.py` (Python/reportlab
+generator reading the root Postman collection) and
+`docs/Xolvon-API-Documentation.pdf` (its output, sitting loose in `docs/`).
+
+Existing Requirement:
+DL-019; plan T8/T9/T12 (`.omo/plans/xolvon-addendum-hardening-docs.md`);
+conservative cleanup policy DL-025 (nothing deleted without a ledger entry).
+
+Options:
+- Accept the Python-generated PDF as an additional official artifact.
+- Delete the stray files immediately during T8.
+- Record them as non-conforming and schedule removal/replacement at T9, where
+  the committed Playwright PDFs (individual + combined, order README →
+  Architecture → Security → Deployment Runbook) supersede them and the T12
+  deletion ledger documents the removal.
+
+Owner:
+Founder/BE Lead
+
+Decision:
+The only approved PDF generation path is Playwright: official handover docs are
+Markdown under `docs/` and PDFs are generated exclusively via
+`npm run docs:pdf` (`scripts/docs-pdf.mjs`). `scripts/generate-api-pdf.py` and
+`docs/Xolvon-API-Documentation.pdf` are formally declared NON-CONFORMING to
+DL-019 and scheduled for removal/replacement at T9 (Playwright committed PDFs;
+combined output covers the Postman-derived API content once T10/T11 reconcile
+the contract). This entry records the disposition only — per DL-025 the files
+are NOT deleted at T8; deletion happens in the T9/T12 pass with a deletion
+ledger line.
+
+Date:
+2026-09-12
+
+Impact:
+T8 documentation ships as Markdown + the sanctioned Playwright pipeline only;
+no second PDF generator becomes canonical. Reviewers must not treat the stray
+Python/PDF pair as authoritative. T9 regenerates all committed PDFs; T12's
+cleanup ledger carries the eventual deletion of both stray paths.
+```
+
+### DL-027 — Final staging/production origins and CSP origins remain OPEN
+
+```text
+Problem:
+T8 documentation must describe staging/production deployment without inventing
+domains. DL-020 locked the CORS whitelist mechanism and DL-021 locked the
+explicit CSP origin-list mechanism, but the concrete values — final staging and
+production frontend origins and the CSP `connect-src`/media origins that depend
+on them — have never been supplied by the owner, and
+`docs/qa-results.md` confirms no real domains exist in this workspace.
+
+Existing Requirement:
+DL-020, DL-021; plan T8 acceptance ("all current route/auth decisions are
+consistent"); addendum open-decision list ("Final staging and production
+frontend origins", "Final CSP connect-src/media origins").
+
+Options:
+- Populate example values in the docs/templates and treat them as final.
+- Leave the decision open with a named owner, documenting the placeholder
+  fallback behavior until final domains exist.
+
+Owner:
+Founder/Backend
+
+Decision:
+FINAL staging and production frontend origins, and the CSP `CSP_CONNECT_SRC`
+connect/media origin lists derived from them, REMAIN OPEN DECISIONS with owner
+= Founder/Backend. Until they are supplied: `CORS_ALLOWED_ORIGINS` and
+`CSP_CONNECT_SRC` stay unset (CORS falls back to `FRONTEND_URL`, CSP defaults
+to `'self'` + `R2_ENDPOINT` origin), no domain values are fabricated in docs,
+templates, Postman, or PDFs, and deployment evidence for those environments
+remains blocked. Closing this decision requires a new entry here with the exact
+approved origins per environment.
+
+Date:
+2026-09-12
+
+Impact:
+`docs/README.md`, `docs/security.md`, and `docs/deployment-runbook.md` describe
+these as open with the safe fallback behavior; the final gate (F3/F4) cannot
+claim CORS/CSP production readiness until the owner records the origins here.
+```

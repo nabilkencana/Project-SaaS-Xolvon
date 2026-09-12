@@ -106,3 +106,67 @@ and are out of scope for tag stripping.
   before any write, and malformed `techStack` JSON returns 400; manual
   `curl` evidence lives in the plan notepad,
   `.omo/notepads/xolvon-addendum-hardening-docs/evidence/`.
+
+## Consolidated security controls
+
+Every control introduced or hardened by the addendum plan
+(`.omo/plans/xolvon-addendum-hardening-docs.md`), mapped to its code and to
+the addendum §5 checklist (`.omo/drafts/xolvon-addendum-hardening-docs.md`,
+Scope ledger — In scope). All entries verified against the source tree on
+2026-09-12.
+
+| Control (plan task) | Code | Tests | Addendum §5 checklist item | Decision |
+|---|---|---|---|---|
+| **Request integrity / CSRF posture** (T3) | `src/common/guards/request-integrity.guard.ts` — global `APP_GUARD` (`src/app.module.ts:66`); `POST/PATCH/DELETE` only; rejects `Sec-Fetch-Site: cross-site` and any `Origin`/`Referer` outside the allowed set; GET/HEAD/OPTIONS and headerless non-browser requests pass | `request-integrity.guard.spec.ts` + e2e + curl matrix | "Bearer-only request-integrity/Origin/Fetch-Metadata guard for mutation routes and negative tests" — no cookie-session CSRF tokens | DL-018 (with DL-003) |
+| **Security headers** (T4) | `src/security/security-headers.ts` wired at `src/main.ts:35-39`, before CORS/pipes/filter — see [Security headers](#security-headers) | `src/security/security-headers.spec.ts` + curl headers local/`APP_ENV=production` | "Helmet security headers with production-only HSTS and explicit CSP/frame/nosniff/referrer policy" | DL-021 |
+| **CORS whitelist** (T5) | `src/config/cors.ts` (`resolveCorsOrigins`) + `app.enableCors({ origin, credentials: true })` at `src/main.ts:43-50`; wildcards rejected with credentials; local fallback `http://localhost:3001` | `cors.spec.ts` + curl allowed/denied origins | "Explicit CORS origin whitelist per environment" | DL-020 |
+| **Route-specific throttling** (T6) | `src/config/throttle.config.ts` (5 named groups: default 100, search 30, catalog 30, signed 10, order 10 / min) + `@Throttle` overrides on controllers; auth login/register 5/min (`src/auth/auth.controller.ts:33,42`); health skips all groups (`src/app.controller.ts:10`) | `throttle.config.spec.ts` + e2e burst tests per group | "Route-specific throttling for public search/catalogs, signed URL, and order creation" | DL-012, DL-016 |
+| **Trust proxy / client-IP** (T6) | `src/config/trust-proxy.ts` + `app.set('trust proxy', …)` (`src/main.ts:25-28`): unset → `false` (fail closed against `X-Forwarded-For` spoofing of throttle buckets), `1` for one proxy hop, malformed → bootstrap aborts | `trust-proxy.spec.ts` + live burst with rotating XFF | Throttling correctness prerequisite of the checklist item above | DL-016 (extension) |
+| **Input sanitization** (T7) | `src/common/sanitization/` (`sanitizeText`, `parseSafeJson`, `@SanitizedText`, `@IsSafeMetadata`) wired through the existing global `ValidationPipe` — see [Input sanitization](#input-sanitization) | `sanitization.spec.ts` (27 tests) + e2e DB read-back | "Input/content sanitization policy for HTML-bearing strings and length limits, with tests and no silent data corruption" | RULES §95, DL-023 lineage |
+| **Password hashing** | Argon2id via `PasswordService` (`src/auth/`); never exposed in responses | auth unit/e2e | Baseline (pre-addendum), kept | DL-003 context |
+| **Refresh-session hygiene** | SHA-256 hashed `sessions.refresh_token`, IP/user-agent capture, expiry purge on refresh, delete on logout (`src/auth/auth.service.ts:136-225`) | auth unit/e2e | Baseline, kept | DL-003 |
+| **Input contract enforcement** | Global `ValidationPipe` `whitelist` + `forbidNonWhitelisted` + `transform` (`src/main.ts:53-59`); DTOs reject unknown properties | every controller spec relies on it | Baseline, kept | — |
+| **Safe error surface** | `AllExceptionsFilter` (`src/common/filters/all-exceptions.filter.ts`): generic 500, no stack/upstream-body/secrets | filter + e2e assertions | Baseline, kept | — |
+| **Immutable admin audit** | `AuditService.record()` → `admin_audit_logs` for verify/activate/cancel/revoke/publish/create/update/delete; no public endpoint, metadata never leaves the API | audit unit + admin e2e | Baseline, kept (HANDBOOK §7 obligation) | — |
+
+### Dependency audit status
+
+`npm audit --json` was captured during plan T2 on **2026-09-12**
+(evidence: `.omo/notepads/xolvon-addendum-hardening-docs/evidence/t2-audit.json`,
+exit code 1 as expected with nonzero findings):
+
+| Severity | Count |
+|---|---|
+| Critical | 0 |
+| High | 4 |
+| Moderate | 1 |
+| Low | 2 |
+| **Total** | **7** |
+
+Remediation of the high/moderate residuals and the Dependabot-vs-scanner
+policy are plan T13 work; no paid scanner has been adopted (DL-023 — OPEN).
+No claim of a clean audit is made here.
+
+### Known limitations (honest state)
+
+1. **Production D1/R2 live path is BLOCKED, not deployed.** There is no
+   verified staging/production deployment target, secret store, or HTTPS
+   domain in this workspace, and no live evidence is fabricated — see
+   [`qa-results.md`](qa-results.md). All security verification above is local
+   (unit/e2e/curl against locally booted instances with non-secret config).
+2. **CSP and CORS final origins are OPEN DECISIONS.** Staging/production
+   frontend origins and `CSP_CONNECT_SRC` values await owner confirmation
+   (DL-020, DL-021, DL-027); until then the lists default to `'self'` plus
+   the configured `R2_ENDPOINT` origin only.
+3. **Monitoring/alerting is interface-only.** `MonitoringPort`
+   (`src/observability/monitoring.port.ts`) has no implementation or provider;
+   vendor and recipients remain OPEN (DL-022).
+4. **The request-integrity guard is a browser-CSRF control, not an auth
+   layer.** A `POST/PATCH/DELETE` with no `Origin`, no `Referer`, and no
+   `Sec-Fetch-Site` header (curl, Postman, server-to-service clients) passes
+   the guard by design; such clients still need valid Bearer credentials on
+   every protected route. This is the explicit non-browser bypass policy
+   recorded under DL-018, not an oversight.
+5. **Sanitization neutralizes markup at the write boundary only**; renderers
+   must still apply contextual escaping (defense in depth over CSP).
+
