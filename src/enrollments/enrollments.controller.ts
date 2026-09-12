@@ -8,13 +8,21 @@ import {
   Patch,
   UseGuards,
 } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { EnrollmentsService } from './enrollments.service';
-import type { EnrollmentResponseDto } from './dto/enrollment-response.dto';
+import { EnrollmentResponseDto } from './dto/enrollment-response.dto';
+import { OPENAPI_BEARER_SCHEME } from '../openapi/openapi.config';
 
+@ApiTags('enrollments')
 @Controller('enrollments')
 export class EnrollmentsController {
   constructor(private readonly enrollmentsService: EnrollmentsService) {}
@@ -24,6 +32,9 @@ export class EnrollmentsController {
    * Strictly uses `user.sub` from JWT to prevent IDOR attacks.
    */
   @UseGuards(AuthGuard)
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'List own enrollments' })
+  @ApiOkResponse({ type: EnrollmentResponseDto, isArray: true })
   @Get('me')
   @HttpCode(HttpStatus.OK)
   async getMyEnrollments(
@@ -37,6 +48,9 @@ export class EnrollmentsController {
    */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Revoke an enrollment (admin)' })
+  @ApiOkResponse({ type: EnrollmentResponseDto })
   @Patch(':id/revoke')
   @HttpCode(HttpStatus.OK)
   async revokeEnrollment(

@@ -13,6 +13,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -23,23 +30,42 @@ import { UpdateMarketplaceItemDto } from './dto/update-marketplace-item.dto';
 import { ListMarketplaceQueryDto } from './dto/list-marketplace-query.dto';
 import { CATALOG_THROTTLE } from '../config/throttle.config';
 import { AttachMarketplaceMediaDto } from './dto/attach-marketplace-media.dto';
-import type {
+import {
   MarketplaceItemDetailDto,
   MarketplaceItemDto,
   MarketplaceMediaDto,
 } from './dto/marketplace-item-response.dto';
+import { OPENAPI_BEARER_SCHEME } from '../openapi/openapi.config';
 
 /**
  * Marketplace showcase (PRD §53-55): public catalog reads + admin listing
  * management. There is NO checkout, purchase, or payment route — the only
  * commerce surface is `externalUrl` returned to the client (SCHEMA.md §60).
  */
+@ApiTags('marketplace')
 @Controller('marketplace')
 export class MarketplaceController {
   constructor(private readonly marketplaceService: MarketplaceService) {}
 
   /** Public: published listings with ?q=, ?sort=, and DL-011 pagination. */
   @Throttle(CATALOG_THROTTLE)
+  @ApiOperation({ summary: 'List published marketplace items' })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        items: {
+          type: 'array',
+          items: {
+            $ref: '#/components/schemas/MarketplaceItemDto',
+          },
+        },
+        page: { type: 'integer' },
+        limit: { type: 'integer' },
+        total: { type: 'integer' },
+      },
+    },
+  })
   @Get()
   async listPublished(
     @Query() query: ListMarketplaceQueryDto,
@@ -53,14 +79,21 @@ export class MarketplaceController {
   }
 
   /** Public: published detail by slug with media sorted by sort_order. */
+  @ApiOperation({ summary: 'Read a published marketplace item by slug' })
+  @ApiOkResponse({ type: MarketplaceItemDetailDto })
   @Get(':slug')
-  async getPublishedBySlug(@Param('slug') slug: string): Promise<MarketplaceItemDetailDto> {
+  async getPublishedBySlug(
+    @Param('slug') slug: string,
+  ): Promise<MarketplaceItemDetailDto> {
     return this.marketplaceService.getPublishedBySlug(slug);
   }
 
   /** Admin: create a draft listing + audit `create`. */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Create a marketplace item (admin)' })
+  @ApiCreatedResponse({ type: MarketplaceItemDto })
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(
@@ -73,6 +106,9 @@ export class MarketplaceController {
   /** Admin: partial update + audit `update`. */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Update a marketplace item (admin)' })
+  @ApiOkResponse({ type: MarketplaceItemDto })
   @Patch(':id')
   @HttpCode(HttpStatus.OK)
   async update(
@@ -86,6 +122,9 @@ export class MarketplaceController {
   /** Admin: publish (draft → published) + audit `publish`. */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Publish a marketplace item (admin)' })
+  @ApiOkResponse({ type: MarketplaceItemDto })
   @Post(':id/publish')
   @HttpCode(HttpStatus.OK)
   async publish(
@@ -98,6 +137,9 @@ export class MarketplaceController {
   /** Admin: unpublish (published → draft) + audit `unpublish`. */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Unpublish a marketplace item (admin)' })
+  @ApiOkResponse({ type: MarketplaceItemDto })
   @Post(':id/unpublish')
   @HttpCode(HttpStatus.OK)
   async unpublish(
@@ -110,6 +152,9 @@ export class MarketplaceController {
   /** Admin: attach media to a listing + audit. */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Attach media to a marketplace item (admin)' })
+  @ApiCreatedResponse({ type: MarketplaceMediaDto })
   @Post(':id/media')
   @HttpCode(HttpStatus.CREATED)
   async attachMedia(
@@ -123,6 +168,15 @@ export class MarketplaceController {
   /** Admin: detach media from a listing + audit. */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Detach media from a marketplace item (admin)' })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: { message: { type: 'string' } },
+      required: ['message'],
+    },
+  })
   @Delete(':id/media/:mediaId')
   @HttpCode(HttpStatus.OK)
   async detachMedia(

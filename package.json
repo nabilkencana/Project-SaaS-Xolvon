@@ -15,6 +15,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "docs:pdf": "node scripts/docs-pdf.mjs",
+    "docs:openapi": "ts-node src/openapi/export-openapi.ts",
     "lint": "oxlint src/ test/",
     "test": "jest",
     "test:esm": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",

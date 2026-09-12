@@ -9,21 +9,36 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { LogoutDto } from './dto/logout.dto';
-import type { SafeUserDto } from './dto/user-response.dto';
-import type { AuthResponseDto } from './dto/auth-response.dto';
+import { SafeUserDto } from './dto/user-response.dto';
+import { AuthResponseDto } from './dto/auth-response.dto';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Roles } from './decorators/roles.decorator';
 import { AuthGuard } from './guards/auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import type { JwtPayload } from './interfaces/jwt-payload.interface';
+import { OPENAPI_BEARER_SCHEME } from '../openapi/openapi.config';
 
+const MESSAGE_SCHEMA = {
+  type: 'object',
+  properties: { message: { type: 'string' } },
+  required: ['message'],
+};
+
+@ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -31,6 +46,8 @@ export class AuthController {
   // 5 req/min per IP — DL-012 (registration abuse matters too).
   @Public()
   @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @ApiOperation({ summary: 'Register a new user account' })
+  @ApiCreatedResponse({ type: SafeUserDto })
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   async register(@Body() dto: RegisterDto): Promise<SafeUserDto> {
@@ -40,6 +57,8 @@ export class AuthController {
   // 5 req/min per IP — DL-012 brute-force protection.
   @Public()
   @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @ApiOperation({ summary: 'Log in with email and password' })
+  @ApiOkResponse({ type: AuthResponseDto })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(
@@ -58,6 +77,14 @@ export class AuthController {
   }
 
   @Public()
+  @ApiOperation({ summary: 'Exchange a refresh token for a new access token' })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: { accessToken: { type: 'string' } },
+      required: ['accessToken'],
+    },
+  })
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   async refresh(
@@ -67,6 +94,8 @@ export class AuthController {
   }
 
   @Public()
+  @ApiOperation({ summary: 'Revoke the session behind a refresh token' })
+  @ApiOkResponse({ schema: MESSAGE_SCHEMA })
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   async logout(@Body() dto: LogoutDto): Promise<{ message: string }> {
@@ -74,6 +103,18 @@ export class AuthController {
   }
 
   @UseGuards(AuthGuard)
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Read the current user from the access token' })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        sub: { type: 'string', description: 'User id (UUID v4).' },
+        email: { type: 'string', format: 'email' },
+        role: { type: 'string', enum: ['user', 'admin'] },
+      },
+    },
+  })
   @Get('me')
   @HttpCode(HttpStatus.OK)
   getProfile(@CurrentUser() user: JwtPayload): JwtPayload {
@@ -82,6 +123,9 @@ export class AuthController {
 
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Probe whether the token carries admin access' })
+  @ApiOkResponse({ schema: MESSAGE_SCHEMA })
   @Get('admin')
   @HttpCode(HttpStatus.OK)
   adminOnly(@CurrentUser() user: JwtPayload): { message: string; user: JwtPayload } {

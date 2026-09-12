@@ -10,6 +10,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -18,11 +25,13 @@ import { OrdersService } from './orders.service';
 import { ORDER_THROTTLE } from '../config/throttle.config';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { SubmitPaymentProofDto } from './dto/submit-payment-proof.dto';
-import type {
+import {
   OrderActivationResponseDto,
   OrderResponseDto,
 } from './dto/order-response.dto';
+import { OPENAPI_BEARER_SCHEME } from '../openapi/openapi.config';
 
+@ApiTags('orders')
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
@@ -33,6 +42,9 @@ export class OrdersController {
    */
   @UseGuards(AuthGuard)
   @Throttle(ORDER_THROTTLE)
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Create an order for published courses' })
+  @ApiCreatedResponse({ type: OrderResponseDto })
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async checkout(
@@ -47,6 +59,17 @@ export class OrdersController {
    * Enforces order ownership check to prevent IDOR vulnerabilities.
    */
   @UseGuards(AuthGuard)
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Submit a payment proof for an own order' })
+  @ApiCreatedResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string' },
+        proofId: { type: 'string' },
+      },
+    },
+  })
   @Post(':id/payment-proof')
   @HttpCode(HttpStatus.CREATED)
   async submitPaymentProof(
@@ -63,6 +86,9 @@ export class OrdersController {
    */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Verify an order payment (admin)' })
+  @ApiOkResponse({ type: OrderResponseDto })
   @Patch(':id/verify')
   @HttpCode(HttpStatus.OK)
   async verifyOrder(
@@ -78,6 +104,9 @@ export class OrdersController {
    */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Activate enrollments from a paid order (admin)' })
+  @ApiOkResponse({ type: OrderActivationResponseDto })
   @Post(':id/activate')
   @HttpCode(HttpStatus.OK)
   async activateOrder(
@@ -89,6 +118,9 @@ export class OrdersController {
 
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Cancel a pending order (admin)' })
+  @ApiOkResponse({ type: OrderResponseDto })
   @Post(':id/cancel')
   @HttpCode(HttpStatus.OK)
   async cancelOrder(

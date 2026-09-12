@@ -12,6 +12,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Public } from '../auth/decorators/public.decorator';
@@ -22,9 +29,10 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { ListProjectsQueryDto } from './dto/list-projects-query.dto';
 import { CATALOG_THROTTLE } from '../config/throttle.config';
-import type { ProjectCardDto } from './dto/project-card.dto';
-import type { ProjectDetailDto } from './dto/project-detail.dto';
-import type { ProjectResponseDto } from './dto/project-response.dto';
+import { ProjectCardDto } from './dto/project-card.dto';
+import { ProjectDetailDto } from './dto/project-detail.dto';
+import { ProjectResponseDto } from './dto/project-response.dto';
+import { OPENAPI_BEARER_SCHEME } from '../openapi/openapi.config';
 
 /**
  * Portfolio (PRD §26-30): public published-only reads and admin content
@@ -33,6 +41,7 @@ import type { ProjectResponseDto } from './dto/project-response.dto';
  * ordering lives in the service query (`sort_order`), members carry explicit
  * roles from the project_members ⋈ collective_members join.
  */
+@ApiTags('projects')
 @Controller('projects')
 export class ProjectsController {
   constructor(private readonly projectsService: ProjectsService) {}
@@ -40,6 +49,21 @@ export class ProjectsController {
   /** Public: published projects with ?q= (title/summary contains) and DL-011 pagination. */
   @Public()
   @Throttle(CATALOG_THROTTLE)
+  @ApiOperation({ summary: 'List published projects' })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        items: {
+          type: 'array',
+          items: { $ref: '#/components/schemas/ProjectCardDto' },
+        },
+        page: { type: 'integer' },
+        limit: { type: 'integer' },
+        total: { type: 'integer' },
+      },
+    },
+  })
   @Get()
   async listPublished(
     @Query() query: ListProjectsQueryDto,
@@ -54,14 +78,21 @@ export class ProjectsController {
 
   /** Public: published detail by slug — draft and unknown slugs both 404. */
   @Public()
+  @ApiOperation({ summary: 'Read a published project by slug' })
+  @ApiOkResponse({ type: ProjectDetailDto })
   @Get(':slug')
-  async getPublishedDetailBySlug(@Param('slug') slug: string): Promise<ProjectDetailDto> {
+  async getPublishedDetailBySlug(
+    @Param('slug') slug: string,
+  ): Promise<ProjectDetailDto> {
     return this.projectsService.getPublishedDetailBySlug(slug);
   }
 
   /** Admin: create a draft project + audit `create`. */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Create a project (admin)' })
+  @ApiCreatedResponse({ type: ProjectResponseDto })
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createProject(
@@ -74,6 +105,9 @@ export class ProjectsController {
   /** Admin: partial update + audit `update`. */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Update a project (admin)' })
+  @ApiOkResponse({ type: ProjectResponseDto })
   @Patch(':id')
   @HttpCode(HttpStatus.OK)
   async updateProject(
@@ -87,6 +121,9 @@ export class ProjectsController {
   /** Admin: publish (draft → published, gated on required fields) + audit `publish`. */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Publish a project (admin)' })
+  @ApiOkResponse({ type: ProjectResponseDto })
   @Post(':id/publish')
   @HttpCode(HttpStatus.OK)
   async publishProject(
@@ -99,6 +136,9 @@ export class ProjectsController {
   /** Admin: unpublish (published → draft) + audit `unpublish`. */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Unpublish a project (admin)' })
+  @ApiOkResponse({ type: ProjectResponseDto })
   @Post(':id/unpublish')
   @HttpCode(HttpStatus.OK)
   async unpublishProject(

@@ -1,3 +1,4 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsIn,
@@ -17,16 +18,19 @@ import type { MarketplaceMediaType } from '../interfaces/marketplace-item.interf
  * no URL is accepted here.
  */
 export class AttachMarketplaceMediaDto {
+  @ApiProperty({ description: 'R2 object key from the upload flow, max 1024 characters.', maxLength: 1024 })
   @IsString({ message: 'objectKey harus berupa teks string.' })
   @IsNotEmpty({ message: 'objectKey tidak boleh kosong.' })
   @MaxLength(1024, { message: 'objectKey maksimal 1024 karakter.' })
   objectKey: string;
 
+  @ApiProperty({ enum: ['image', 'video', 'deck'] satisfies [MarketplaceMediaType, ...MarketplaceMediaType[]] })
   @IsIn(['image', 'video', 'deck'], {
     message: 'mediaType hanya menerima nilai image, video, atau deck.',
   })
   mediaType: MarketplaceMediaType;
 
+  @ApiPropertyOptional({ description: 'Display order, min 0.', minimum: 0 })
   @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'sortOrder harus berupa integer.' })

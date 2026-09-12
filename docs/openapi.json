@@ -1,0 +1,4339 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/api": {
+      "get": {
+        "operationId": "AppController_getHello",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Health greeting string."
+          }
+        },
+        "summary": "Check API health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "operationId": "AuthController_register",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SafeUserDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Register a new user account",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Log in with email and password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "operationId": "AuthController_refresh",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accessToken": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "accessToken"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Exchange a refresh token for a new access token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "operationId": "AuthController_logout",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogoutDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Revoke the session behind a refresh token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "operationId": "AuthController_getProfile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sub": {
+                      "type": "string",
+                      "description": "User id (UUID v4)."
+                    },
+                    "email": {
+                      "type": "string",
+                      "format": "email"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "admin"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read the current user from the access token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/admin": {
+      "get": {
+        "operationId": "AuthController_adminOnly",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Probe whether the token carries admin access",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/enrollments/me": {
+      "get": {
+        "operationId": "EnrollmentsController_getMyEnrollments",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EnrollmentResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List own enrollments",
+        "tags": [
+          "enrollments"
+        ]
+      }
+    },
+    "/api/enrollments/{id}/revoke": {
+      "patch": {
+        "operationId": "EnrollmentsController_revokeEnrollment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Revoke an enrollment (admin)",
+        "tags": [
+          "enrollments"
+        ]
+      }
+    },
+    "/api/orders": {
+      "post": {
+        "operationId": "OrdersController_checkout",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create an order for published courses",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
+    "/api/orders/{id}/payment-proof": {
+      "post": {
+        "operationId": "OrdersController_submitPaymentProof",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitPaymentProofDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "proofId": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Submit a payment proof for an own order",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
+    "/api/orders/{id}/verify": {
+      "patch": {
+        "operationId": "OrdersController_verifyOrder",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Verify an order payment (admin)",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
+    "/api/orders/{id}/activate": {
+      "post": {
+        "operationId": "OrdersController_activateOrder",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderActivationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Activate enrollments from a paid order (admin)",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
+    "/api/orders/{id}/cancel": {
+      "post": {
+        "operationId": "OrdersController_cancelOrder",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Cancel a pending order (admin)",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
+    "/api/courses": {
+      "get": {
+        "operationId": "CoursesController_listPublished",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Keyword matched against the course title. Max 200 characters.",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Sort direction. Default latest.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "latest",
+                "oldest"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": {
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size, default 20, max 100.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CourseCardDto"
+                      }
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "query": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "List published courses",
+        "tags": [
+          "courses"
+        ]
+      },
+      "post": {
+        "operationId": "CoursesController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCourseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseCardDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a draft course (admin)",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/courses/{slug}": {
+      "get": {
+        "operationId": "CoursesController_getPublishedBySlug",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read a published course by slug",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/courses/{id}": {
+      "patch": {
+        "operationId": "CoursesController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCourseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseCardDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update a course (admin)",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/courses/{id}/publish": {
+      "post": {
+        "operationId": "CoursesController_publish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseCardDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Publish a draft course (admin)",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/courses/{id}/unpublish": {
+      "post": {
+        "operationId": "CoursesController_unpublish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseCardDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Unpublish a course back to draft (admin)",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/home": {
+      "get": {
+        "operationId": "HomeController_getHome",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "courses": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "slug": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "price": {
+                            "type": "integer"
+                          },
+                          "thumbnailUrl": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    },
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "slug": {
+                            "type": "string"
+                          },
+                          "summary": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    },
+                    "marketplace": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "slug": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "externalUrl": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "collective": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "slug": {
+                            "type": "string"
+                          },
+                          "photo": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "role": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "skills": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "socialLinks": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read the public home page aggregation",
+        "tags": [
+          "home"
+        ]
+      }
+    },
+    "/api/marketplace": {
+      "get": {
+        "operationId": "MarketplaceController_listPublished",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Keyword matched against title/description. Max 200 characters.",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Sort direction. Default latest.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "latest",
+                "oldest"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": {
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size, default 20, max 100.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MarketplaceItemDto"
+                      }
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "List published marketplace items",
+        "tags": [
+          "marketplace"
+        ]
+      },
+      "post": {
+        "operationId": "MarketplaceController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMarketplaceItemDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketplaceItemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a marketplace item (admin)",
+        "tags": [
+          "marketplace"
+        ]
+      }
+    },
+    "/api/marketplace/{slug}": {
+      "get": {
+        "operationId": "MarketplaceController_getPublishedBySlug",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketplaceItemDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read a published marketplace item by slug",
+        "tags": [
+          "marketplace"
+        ]
+      }
+    },
+    "/api/marketplace/{id}": {
+      "patch": {
+        "operationId": "MarketplaceController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMarketplaceItemDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketplaceItemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update a marketplace item (admin)",
+        "tags": [
+          "marketplace"
+        ]
+      }
+    },
+    "/api/marketplace/{id}/publish": {
+      "post": {
+        "operationId": "MarketplaceController_publish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketplaceItemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Publish a marketplace item (admin)",
+        "tags": [
+          "marketplace"
+        ]
+      }
+    },
+    "/api/marketplace/{id}/unpublish": {
+      "post": {
+        "operationId": "MarketplaceController_unpublish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketplaceItemDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Unpublish a marketplace item (admin)",
+        "tags": [
+          "marketplace"
+        ]
+      }
+    },
+    "/api/marketplace/{id}/media": {
+      "post": {
+        "operationId": "MarketplaceController_attachMedia",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachMarketplaceMediaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketplaceMediaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Attach media to a marketplace item (admin)",
+        "tags": [
+          "marketplace"
+        ]
+      }
+    },
+    "/api/marketplace/{id}/media/{mediaId}": {
+      "delete": {
+        "operationId": "MarketplaceController_detachMedia",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mediaId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Detach media from a marketplace item (admin)",
+        "tags": [
+          "marketplace"
+        ]
+      }
+    },
+    "/api/collective": {
+      "get": {
+        "operationId": "CollectiveController_listPublished",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Keyword matched against name/role/skills. Max 200 characters.",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": {
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Page size, default 20, max 100.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedCollectiveResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List published collective members",
+        "tags": [
+          "collective"
+        ]
+      },
+      "post": {
+        "operationId": "CollectiveController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCollectiveMemberDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectiveMemberResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a collective member (admin)",
+        "tags": [
+          "collective"
+        ]
+      }
+    },
+    "/api/collective/{slug}": {
+      "get": {
+        "operationId": "CollectiveController_getBySlug",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectiveMemberDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read a collective member by slug",
+        "tags": [
+          "collective"
+        ]
+      }
+    },
+    "/api/collective/{id}": {
+      "patch": {
+        "operationId": "CollectiveController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCollectiveMemberDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectiveMemberResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update a collective member (admin)",
+        "tags": [
+          "collective"
+        ]
+      }
+    },
+    "/api/collective/{id}/publish": {
+      "post": {
+        "operationId": "CollectiveController_publish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectiveMemberResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Publish a collective member (admin)",
+        "tags": [
+          "collective"
+        ]
+      }
+    },
+    "/api/collective/{id}/unpublish": {
+      "post": {
+        "operationId": "CollectiveController_unpublish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectiveMemberResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Unpublish a collective member (admin)",
+        "tags": [
+          "collective"
+        ]
+      }
+    },
+    "/api/projects": {
+      "get": {
+        "operationId": "ProjectsController_listPublished",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProjectCardDto"
+                      }
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "List published projects",
+        "tags": [
+          "projects"
+        ]
+      },
+      "post": {
+        "operationId": "ProjectsController_createProject",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a project (admin)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/projects/{slug}": {
+      "get": {
+        "operationId": "ProjectsController_getPublishedDetailBySlug",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read a published project by slug",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/projects/{id}": {
+      "patch": {
+        "operationId": "ProjectsController_updateProject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProjectDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update a project (admin)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/projects/{id}/publish": {
+      "post": {
+        "operationId": "ProjectsController_publishProject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Publish a project (admin)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/projects/{id}/unpublish": {
+      "post": {
+        "operationId": "ProjectsController_unpublishProject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Unpublish a project (admin)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/projects/{id}/media": {
+      "post": {
+        "operationId": "ProjectMediaController_attachMedia",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachProjectMediaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMediaResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Attach media to a project (admin)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/projects/{id}/media/{mediaId}": {
+      "delete": {
+        "operationId": "ProjectMediaController_detachMedia",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mediaId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Detach media from a project (admin)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/projects/{id}/members": {
+      "post": {
+        "operationId": "ProjectMembersController_assignMember",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignProjectMemberDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Assign a collective member to a project (admin)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/projects/{id}/members/{memberId}": {
+      "delete": {
+        "operationId": "ProjectMembersController_removeMember",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "memberId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Remove a member assignment from a project (admin)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/lessons/{id}/video-url": {
+      "get": {
+        "operationId": "LessonsController_videoUrl",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "description": "Time-limited signed media URL."
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "description": "ISO 8601 expiry timestamp."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Mint a signed lesson video URL (enrollment-gated)",
+        "tags": [
+          "lessons"
+        ]
+      }
+    },
+    "/api/lessons/{id}": {
+      "patch": {
+        "operationId": "LessonsController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLessonDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonAdminDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update a lesson (admin)",
+        "tags": [
+          "lessons"
+        ]
+      },
+      "delete": {
+        "operationId": "LessonsController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonAdminDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Delete a lesson (admin)",
+        "tags": [
+          "lessons"
+        ]
+      }
+    },
+    "/api/lessons/{id}/reorder": {
+      "patch": {
+        "operationId": "LessonsController_reorder",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderLessonDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonAdminDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Reorder a lesson (admin)",
+        "tags": [
+          "lessons"
+        ]
+      }
+    },
+    "/api/lessons/{id}/publish": {
+      "post": {
+        "operationId": "LessonsController_publish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonAdminDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Publish a lesson (admin)",
+        "tags": [
+          "lessons"
+        ]
+      }
+    },
+    "/api/lessons/{id}/unpublish": {
+      "post": {
+        "operationId": "LessonsController_unpublish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonAdminDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Unpublish a lesson (admin)",
+        "tags": [
+          "lessons"
+        ]
+      }
+    },
+    "/api/courses/{slug}/lessons": {
+      "get": {
+        "operationId": "CourseLessonsController_listPublishedByCourseSlug",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LessonSummaryDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "List published lessons of a course",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/courses/{courseId}/lessons": {
+      "post": {
+        "operationId": "CourseLessonsController_create",
+        "parameters": [
+          {
+            "name": "courseId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLessonDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonAdminDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a draft lesson under a course (admin)",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/admin/media/upload-url": {
+      "post": {
+        "operationId": "MediaController_createUploadUrl",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUploadUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "description": "Server-generated object key."
+                    },
+                    "uploadUrl": {
+                      "type": "string",
+                      "description": "Presigned PUT URL."
+                    },
+                    "expiresIn": {
+                      "type": "integer",
+                      "description": "URL validity in seconds."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a presigned upload URL (admin)",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/api/admin/media/confirm": {
+      "post": {
+        "operationId": "MediaController_confirm",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmMediaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "confirmed": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Confirm a completed upload (admin)",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/api/admin/media/read-url": {
+      "post": {
+        "operationId": "MediaController_readUrl",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmMediaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "readUrl": {
+                      "type": "string",
+                      "description": "Presigned GET URL."
+                    },
+                    "expiresIn": {
+                      "type": "integer",
+                      "description": "URL validity in seconds."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a presigned read URL for private media (admin)",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/api/lessons/{lessonId}/resources": {
+      "post": {
+        "operationId": "CourseResourcesController_create",
+        "parameters": [
+          {
+            "name": "lessonId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCourseResourceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseResourceDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a course resource under a lesson (admin)",
+        "tags": [
+          "course-resources"
+        ]
+      }
+    },
+    "/api/resources/{id}": {
+      "delete": {
+        "operationId": "CourseResourcesController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseResourceDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Delete a course resource (admin)",
+        "tags": [
+          "course-resources"
+        ]
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "operationId": "AdminController_listUsers",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminUserDto"
+                      }
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List users with pagination (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/users/{id}": {
+      "get": {
+        "operationId": "AdminController_getUserDetail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read one user with enrollments and orders (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/orders": {
+      "get": {
+        "operationId": "AdminController_listOrders",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminOrderDto"
+                      }
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List orders with pagination (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/overview": {
+      "get": {
+        "operationId": "AdminController_getOverview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOverviewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read dashboard counters (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/progress": {
+      "post": {
+        "operationId": "ProgressController_update",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProgressDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "lessonId": {
+                      "type": "string"
+                    },
+                    "completed": {
+                      "type": "boolean"
+                    },
+                    "completedAt": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Write lesson progress for the caller",
+        "tags": [
+          "progress"
+        ]
+      },
+      "get": {
+        "operationId": "ProgressController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "lessonId": {
+                        "type": "string"
+                      },
+                      "completed": {
+                        "type": "boolean"
+                      },
+                      "completedAt": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "updatedAt": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List lesson progress of the caller",
+        "tags": [
+          "progress"
+        ]
+      }
+    },
+    "/api/search": {
+      "get": {
+        "operationId": "SearchController_search",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "course",
+                              "project",
+                              "marketplace"
+                            ]
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "slug": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "published"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "query": {
+                      "type": "string"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Search published courses, projects, and marketplace items",
+        "tags": [
+          "search"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Xolvon Backend API",
+    "description": "HTTP contract for the Xolvon backend (global prefix /api). Auth: `Authorization: Bearer <accessToken>` (JWT, issued by POST /api/auth/register and POST /api/auth/login). Public routes need no credentials; routes listed with bearer security reject missing or invalid tokens with 401.",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http",
+        "description": "JWT access token. Send it as `Authorization: Bearer <accessToken>`."
+      }
+    },
+    "schemas": {
+      "RegisterDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Display name, max 100 characters.",
+            "maxLength": 100
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address, trimmed and lowercased.",
+            "example": "user@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number, 8-20 characters."
+          },
+          "password": {
+            "type": "string",
+            "description": "Password, at least 8 characters.",
+            "minLength": 8
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "phone",
+          "password"
+        ]
+      },
+      "SafeUserDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "User id (UUID v4)."
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "suspended"
+            ]
+          },
+          "email_verified": {
+            "type": "boolean"
+          },
+          "phone_verified": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "description": "ISO 8601 timestamp."
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "ISO 8601 timestamp."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "phone",
+          "role",
+          "status",
+          "email_verified",
+          "phone_verified",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Account email, trimmed and lowercased.",
+            "example": "user@example.com"
+          },
+          "password": {
+            "type": "string",
+            "description": "Account password.",
+            "format": "password"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "AuthResponseDto": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "description": "Short-lived JWT access token."
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "Opaque refresh token for session rotation."
+          },
+          "user": {
+            "$ref": "#/components/schemas/SafeUserDto"
+          }
+        },
+        "required": [
+          "accessToken",
+          "refreshToken",
+          "user"
+        ]
+      },
+      "RefreshTokenDto": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "description": "Refresh token issued at login."
+          }
+        },
+        "required": [
+          "refreshToken"
+        ]
+      },
+      "LogoutDto": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "description": "Refresh token of the session to revoke."
+          }
+        },
+        "required": [
+          "refreshToken"
+        ]
+      },
+      "EnrollmentResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Enrollment id (UUID v4)."
+          },
+          "courseId": {
+            "type": "string",
+            "description": "Enrolled course id (UUID v4)."
+          },
+          "orderId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Originating order id."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "revoked",
+              "expired"
+            ]
+          },
+          "grantedAt": {
+            "type": "string",
+            "description": "ISO 8601 timestamp."
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "ISO 8601 timestamp."
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO 8601 timestamp."
+          },
+          "courseTitle": {
+            "type": "string",
+            "nullable": true
+          },
+          "courseSlug": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "courseId",
+          "orderId",
+          "status",
+          "grantedAt",
+          "expiresAt",
+          "createdAt"
+        ]
+      },
+      "CreateOrderDto": {
+        "type": "object",
+        "properties": {
+          "courseIds": {
+            "description": "Course ids to purchase (UUID v4, unique, non-empty).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string",
+            "description": "Order notes, max 500 characters, sanitized on write.",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "courseIds"
+        ]
+      },
+      "OrderItemResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Order item id (UUID v4)."
+          },
+          "courseId": {
+            "type": "string",
+            "description": "Course id (UUID v4)."
+          },
+          "price": {
+            "type": "number",
+            "description": "Item price in IDR (server-computed)."
+          }
+        },
+        "required": [
+          "id",
+          "courseId",
+          "price"
+        ]
+      },
+      "OrderResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Order id (UUID v4)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "cancelled"
+            ]
+          },
+          "amount": {
+            "type": "number",
+            "description": "Total amount in IDR (server-computed)."
+          },
+          "notes": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderItemResponseDto"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO 8601 timestamp."
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO 8601 timestamp."
+          },
+          "verifiedAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "ISO 8601 timestamp, null until verified."
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "amount",
+          "notes",
+          "items",
+          "createdAt",
+          "updatedAt",
+          "verifiedAt"
+        ]
+      },
+      "SubmitPaymentProofDto": {
+        "type": "object",
+        "properties": {
+          "objectKey": {
+            "type": "string",
+            "description": "Object key of the uploaded payment proof, max 1000 characters.",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "objectKey"
+        ]
+      },
+      "OrderActivationResponseDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string",
+            "description": "Order id (UUID v4)."
+          },
+          "activatedCoursesCount": {
+            "type": "number",
+            "description": "Number of enrollments activated by the call."
+          }
+        },
+        "required": [
+          "message",
+          "orderId",
+          "activatedCoursesCount"
+        ]
+      },
+      "LessonSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Lesson id (UUID v4)."
+          },
+          "title": {
+            "type": "string"
+          },
+          "orderIndex": {
+            "type": "number",
+            "description": "Sequence position (order_index)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "orderIndex",
+          "status"
+        ]
+      },
+      "CourseDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Course id (UUID v4)."
+          },
+          "title": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "price": {
+            "type": "number",
+            "description": "Price in IDR."
+          },
+          "thumbnailUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          },
+          "lessons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LessonSummaryDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "slug",
+          "description",
+          "price",
+          "thumbnailUrl",
+          "status",
+          "lessons"
+        ]
+      },
+      "CreateCourseDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Course title, max 200 characters.",
+            "maxLength": 200
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL slug: lowercase letters, digits, hyphens. Max 120 characters.",
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "description": "Description, max 5000 characters, sanitized on write.",
+            "maxLength": 5000
+          },
+          "price": {
+            "type": "number",
+            "description": "Price in IDR, 0-1000000000.",
+            "minimum": 0,
+            "maximum": 1000000000
+          },
+          "thumbnailUrl": {
+            "type": "string",
+            "description": "Thumbnail URL, max 2048 characters.",
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "title",
+          "slug",
+          "description",
+          "price"
+        ]
+      },
+      "CourseCardDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Course id (UUID v4)."
+          },
+          "title": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "price": {
+            "type": "number",
+            "description": "Price in IDR."
+          },
+          "thumbnailUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "slug",
+          "description",
+          "price",
+          "thumbnailUrl",
+          "status"
+        ]
+      },
+      "UpdateCourseDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Course title, max 200 characters.",
+            "maxLength": 200
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL slug: lowercase letters, digits, hyphens. Max 120 characters.",
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "description": "Description, max 5000 characters, sanitized on write.",
+            "maxLength": 5000
+          },
+          "price": {
+            "type": "number",
+            "description": "Price in IDR, 0-1000000000.",
+            "minimum": 0,
+            "maximum": 1000000000
+          },
+          "thumbnailUrl": {
+            "type": "string",
+            "description": "Thumbnail URL, max 2048 characters.",
+            "maxLength": 2048
+          }
+        }
+      },
+      "MarketplaceMediaDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Media id (UUID v4)."
+          },
+          "objectKey": {
+            "type": "string"
+          },
+          "mediaType": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "deck"
+            ]
+          },
+          "sortOrder": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "objectKey",
+          "mediaType",
+          "sortOrder"
+        ]
+      },
+      "MarketplaceItemDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Item id (UUID v4)."
+          },
+          "title": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "externalUrl": {
+            "type": "string",
+            "description": "Outbound https product URL."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarketplaceMediaDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "slug",
+          "description",
+          "capabilities",
+          "externalUrl",
+          "status",
+          "media"
+        ]
+      },
+      "CreateMarketplaceItemDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Item title, max 200 characters.",
+            "maxLength": 200
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL slug: lowercase letters, digits, hyphens. Max 120 characters.",
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "description": "Description, max 2000 characters, sanitized on write.",
+            "maxLength": 2000
+          },
+          "externalUrl": {
+            "type": "string",
+            "description": "Outbound product URL, https-only, max 2048 characters.",
+            "maxLength": 2048
+          },
+          "capabilities": {
+            "description": "Capability tags, max 20 items.",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "slug",
+          "externalUrl"
+        ]
+      },
+      "MarketplaceItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Item id (UUID v4)."
+          },
+          "title": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "externalUrl": {
+            "type": "string",
+            "description": "Outbound https product URL."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "slug",
+          "description",
+          "capabilities",
+          "externalUrl",
+          "status"
+        ]
+      },
+      "UpdateMarketplaceItemDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Item title, max 200 characters.",
+            "maxLength": 200
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL slug: lowercase letters, digits, hyphens. Max 120 characters.",
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "description": "Description, max 2000 characters, sanitized on write.",
+            "maxLength": 2000
+          },
+          "externalUrl": {
+            "type": "string",
+            "description": "Outbound product URL, https-only, max 2048 characters.",
+            "maxLength": 2048
+          },
+          "capabilities": {
+            "description": "Capability tags, max 20 items.",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AttachMarketplaceMediaDto": {
+        "type": "object",
+        "properties": {
+          "objectKey": {
+            "type": "string",
+            "description": "R2 object key from the upload flow, max 1024 characters.",
+            "maxLength": 1024
+          },
+          "mediaType": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "deck"
+            ]
+          },
+          "sortOrder": {
+            "type": "number",
+            "description": "Display order, min 0.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "objectKey",
+          "mediaType"
+        ]
+      },
+      "SocialLinkDto": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "url"
+        ]
+      },
+      "CollectiveMemberResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Member id (UUID v4)."
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "photo": {
+            "type": "string",
+            "nullable": true
+          },
+          "role": {
+            "type": "string"
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bio": {
+            "type": "string",
+            "nullable": true
+          },
+          "socialLinks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SocialLinkDto"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "photo",
+          "role",
+          "skills",
+          "bio",
+          "socialLinks",
+          "status"
+        ]
+      },
+      "PaginatedCollectiveResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CollectiveMemberResponseDto"
+            }
+          },
+          "page": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "limit",
+          "total"
+        ]
+      },
+      "ProjectCardDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Project id (UUID v4)."
+          },
+          "title": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "published"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "slug",
+          "type",
+          "summary",
+          "status"
+        ]
+      },
+      "CollectiveMemberDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Member id (UUID v4)."
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "photo": {
+            "type": "string",
+            "nullable": true
+          },
+          "role": {
+            "type": "string"
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bio": {
+            "type": "string",
+            "nullable": true
+          },
+          "socialLinks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SocialLinkDto"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          },
+          "relatedProjects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectCardDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "photo",
+          "role",
+          "skills",
+          "bio",
+          "socialLinks",
+          "status",
+          "relatedProjects"
+        ]
+      },
+      "SocialLinkInputDto": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Social platform name, max 120 characters."
+          },
+          "url": {
+            "type": "string",
+            "description": "Profile URL, max 2048 characters.",
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "platform",
+          "url"
+        ]
+      },
+      "CreateCollectiveMemberDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Member name, max 120 characters.",
+            "maxLength": 120
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL slug: lowercase letters, digits, hyphens. Max 120 characters.",
+            "maxLength": 120
+          },
+          "photo": {
+            "type": "string",
+            "description": "Profile photo URL, max 2048 characters.",
+            "maxLength": 2048
+          },
+          "role": {
+            "type": "string",
+            "description": "Specialist role label, max 120 characters.",
+            "maxLength": 120
+          },
+          "skills": {
+            "description": "Skill tags, max 50 items, none empty.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bio": {
+            "type": "string",
+            "description": "Short biography, max 2000 characters, sanitized on write.",
+            "maxLength": 2000
+          },
+          "socialLinks": {
+            "description": "Social links, max 20 items.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SocialLinkInputDto"
+            }
+          },
+          "displayOrder": {
+            "type": "number",
+            "description": "Carousel ordering position, min 0.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "name",
+          "slug",
+          "role",
+          "skills"
+        ]
+      },
+      "UpdateCollectiveMemberDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Member name, max 120 characters.",
+            "maxLength": 120
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL slug: lowercase letters, digits, hyphens. Max 120 characters.",
+            "maxLength": 120
+          },
+          "photo": {
+            "type": "string",
+            "description": "Profile photo URL, max 2048 characters.",
+            "maxLength": 2048
+          },
+          "role": {
+            "type": "string",
+            "description": "Specialist role label, max 120 characters.",
+            "maxLength": 120
+          },
+          "skills": {
+            "description": "Skill tags, max 50 items, none empty.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bio": {
+            "type": "string",
+            "description": "Short biography, max 2000 characters, sanitized on write.",
+            "maxLength": 2000
+          },
+          "socialLinks": {
+            "description": "Social links, max 20 items.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SocialLinkInputDto"
+            }
+          },
+          "displayOrder": {
+            "type": "number",
+            "description": "Carousel ordering position, min 0.",
+            "minimum": 0
+          }
+        }
+      },
+      "ProjectDetailDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateProjectDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Project title, max 200 characters.",
+            "maxLength": 200
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL slug: lowercase letters, digits, hyphens. Max 200 characters.",
+            "maxLength": 200
+          },
+          "type": {
+            "type": "string",
+            "description": "Controlled project type string, max 100 characters (not a final enum).",
+            "maxLength": 100
+          },
+          "summary": {
+            "type": "string",
+            "description": "One-line summary, max 500 characters, sanitized on write.",
+            "maxLength": 500
+          },
+          "problem": {
+            "type": "string",
+            "description": "Story section \"Problem\", max 10000 characters, sanitized on write.",
+            "maxLength": 10000
+          },
+          "solution": {
+            "type": "string",
+            "description": "Story section \"Solution\", max 10000 characters, sanitized on write.",
+            "maxLength": 10000
+          },
+          "techStack": {
+            "type": "string",
+            "description": "Raw tech-stack text (parsed at read boundary), max 1000 characters.",
+            "maxLength": 1000
+          },
+          "result": {
+            "type": "string",
+            "description": "Story section \"Result\", max 10000 characters, sanitized on write.",
+            "maxLength": 10000
+          }
+        },
+        "required": [
+          "title",
+          "slug"
+        ]
+      },
+      "ProjectResponseDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateProjectDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Project title, max 200 characters.",
+            "maxLength": 200
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL slug: lowercase letters, digits, hyphens. Max 200 characters.",
+            "maxLength": 200
+          },
+          "type": {
+            "type": "string",
+            "description": "Controlled project type string, max 100 characters (not a final enum).",
+            "maxLength": 100
+          },
+          "summary": {
+            "type": "string",
+            "description": "One-line summary, max 500 characters, sanitized on write.",
+            "maxLength": 500
+          },
+          "problem": {
+            "type": "string",
+            "description": "Story section \"Problem\", max 10000 characters, sanitized on write.",
+            "maxLength": 10000
+          },
+          "solution": {
+            "type": "string",
+            "description": "Story section \"Solution\", max 10000 characters, sanitized on write.",
+            "maxLength": 10000
+          },
+          "techStack": {
+            "type": "string",
+            "description": "Raw tech-stack text (parsed at read boundary), max 1000 characters.",
+            "maxLength": 1000
+          },
+          "result": {
+            "type": "string",
+            "description": "Story section \"Result\", max 10000 characters, sanitized on write.",
+            "maxLength": 10000
+          }
+        }
+      },
+      "AttachProjectMediaDto": {
+        "type": "object",
+        "properties": {
+          "objectKey": {
+            "type": "string",
+            "description": "Object key of the uploaded file, max 500 characters.",
+            "maxLength": 500
+          },
+          "mediaType": {
+            "type": "string",
+            "description": "Controlled media type string, max 50 characters (not a final enum).",
+            "maxLength": 50
+          },
+          "sortOrder": {
+            "type": "number",
+            "description": "Display order, min 0.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "objectKey",
+          "mediaType"
+        ]
+      },
+      "ProjectMediaResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Media row id (UUID v4)."
+          },
+          "projectId": {
+            "type": "string",
+            "description": "Owning project id (UUID v4)."
+          },
+          "objectKey": {
+            "type": "string"
+          },
+          "mediaType": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "objectKey",
+          "mediaType",
+          "sortOrder"
+        ]
+      },
+      "AssignProjectMemberDto": {
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "description": "Collective member id (UUID v4)."
+          },
+          "role": {
+            "type": "string",
+            "description": "Explicit role attribution, max 100 characters (controlled string, not a final enum).",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "memberId",
+          "role"
+        ]
+      },
+      "UpdateLessonDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Lesson title, max 200 characters.",
+            "maxLength": 200
+          },
+          "content": {
+            "type": "string",
+            "description": "Lesson content, max 20000 characters, sanitized on write.",
+            "maxLength": 20000
+          },
+          "orderIndex": {
+            "type": "number",
+            "description": "Sequence position, 0-1000000.",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        }
+      },
+      "LessonAdminDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Lesson id (UUID v4)."
+          },
+          "courseId": {
+            "type": "string",
+            "description": "Owning course id (UUID v4)."
+          },
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string",
+            "nullable": true
+          },
+          "videoObjectKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "orderIndex": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "ISO 8601 timestamp."
+          }
+        },
+        "required": [
+          "id",
+          "courseId",
+          "title",
+          "content",
+          "videoObjectKey",
+          "orderIndex",
+          "status",
+          "createdAt"
+        ]
+      },
+      "ReorderLessonDto": {
+        "type": "object",
+        "properties": {
+          "orderIndex": {
+            "type": "number",
+            "description": "New sequence position, 0-1000000.",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        },
+        "required": [
+          "orderIndex"
+        ]
+      },
+      "CreateLessonDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Lesson title, max 200 characters.",
+            "maxLength": 200
+          },
+          "content": {
+            "type": "string",
+            "description": "Lesson content, max 20000 characters, sanitized on write.",
+            "maxLength": 20000
+          },
+          "orderIndex": {
+            "type": "number",
+            "description": "Sequence position, 0-1000000.",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        },
+        "required": [
+          "title",
+          "orderIndex"
+        ]
+      },
+      "CreateUploadUrlDto": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string",
+            "enum": [
+              "public/site",
+              "public/projects",
+              "private/projects",
+              "private/courses"
+            ],
+            "description": "Allowed storage prefix for the key."
+          },
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/webp",
+              "application/pdf",
+              "video/mp4"
+            ],
+            "description": "MIME type of the file being uploaded."
+          },
+          "size": {
+            "type": "number",
+            "description": "File size in bytes, 1-524288000.",
+            "minimum": 1,
+            "maximum": 524288000
+          },
+          "filename": {
+            "type": "string",
+            "description": "Original file name."
+          }
+        },
+        "required": [
+          "prefix",
+          "contentType",
+          "size",
+          "filename"
+        ]
+      },
+      "ConfirmMediaDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Object key of the uploaded file."
+          }
+        },
+        "required": [
+          "key"
+        ]
+      },
+      "CreateCourseResourceDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "resource",
+              "assignment"
+            ]
+          },
+          "objectKey": {
+            "type": "string",
+            "description": "Object key of the uploaded file, max 1024 characters.",
+            "maxLength": 1024
+          },
+          "title": {
+            "type": "string",
+            "description": "Resource title, max 200 characters.",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "type",
+          "objectKey",
+          "title"
+        ]
+      },
+      "CourseResourceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Resource id (UUID v4)."
+          },
+          "lessonId": {
+            "type": "string",
+            "nullable": true
+          },
+          "courseId": {
+            "type": "string",
+            "nullable": true
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "resource",
+              "assignment"
+            ]
+          },
+          "objectKey": {
+            "type": "string",
+            "nullable": true,
+            "description": "Private storage object key — admin surface only."
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "ISO 8601 timestamp."
+          }
+        },
+        "required": [
+          "id",
+          "lessonId",
+          "courseId",
+          "type",
+          "objectKey",
+          "title",
+          "createdAt"
+        ]
+      },
+      "AdminUserDetailDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "AdminOverviewDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateProgressDto": {
+        "type": "object",
+        "properties": {
+          "lessonId": {
+            "type": "string",
+            "description": "Lesson id (UUID v4)."
+          },
+          "completed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "lessonId",
+          "completed"
+        ]
+      }
+    }
+  }
+}

@@ -935,3 +935,45 @@ Impact:
 these as open with the safe fallback behavior; the final gate (F3/F4) cannot
 claim CORS/CSP production readiness until the owner records the origins here.
 ```
+
+### DL-028 — OpenAPI contract is exported as JSON only; no Swagger UI is served
+
+```text
+Problem:
+T10 must publish the HTTP contract as `docs/openapi.json` without weakening the
+Bearer-only security posture. Serving the generated Swagger UI as an
+unauthenticated route would expose a full API map (and an interactive "try it"
+console) to anonymous visitors on every environment, including staging and
+production, at zero product benefit for API clients that already have the
+committed artifact.
+
+Existing Requirement:
+DL-016 (JWT Bearer-only auth); addendum Must-NOT-have "no paid/extra public
+attack surface without owner decision"; plan T10 acceptance ("decide Swagger UI
+exposure (local/internal only unless auth protected) in decision log").
+
+Options:
+- Serve `SwaggerModule.setup()` at `/api/docs` in all environments.
+- Serve the UI only when `APP_ENV=local`.
+- Export the document as a committed JSON artifact and never serve a UI route.
+
+Owner:
+Founder/Backend
+
+Decision:
+The application serves NO Swagger UI in ANY environment (local included). The
+contract ships as the committed `docs/openapi.json`, regenerated only by
+`npm run docs:openapi` (`src/openapi/export-openapi.ts`), which bootstraps the
+real app offline, forces local drivers, and fails if any live route is missing
+from the document. Reviewers and clients render the JSON with their own tools.
+Reopening UI exposure requires a new entry here plus an auth protection design.
+
+Date:
+2026-09-12
+
+Impact:
+`package.json` gains `docs:openapi`; `src/openapi/*` adds the document factory,
+export script, and contract tests; `docs/openapi.json` becomes a generated
+artifact checked for secret-free content by `findSecretLeaks` and the export
+spec. No new HTTP route is added to the running application.
+```

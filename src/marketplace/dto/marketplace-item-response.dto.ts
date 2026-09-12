@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import type {
   MarketplaceItemStatus,
   MarketplaceMediaType,
@@ -10,12 +11,25 @@ import type {
  * there is no price, order, or checkout data on this DTO by design.
  */
 export class MarketplaceItemDto {
+  @ApiProperty({ description: 'Item id (UUID v4).' })
   readonly id: string;
+
+  @ApiProperty()
   readonly title: string;
+
+  @ApiProperty()
   readonly slug: string;
+
+  @ApiProperty()
   readonly description: string;
+
+  @ApiProperty({ type: [String] })
   readonly capabilities: string[];
+
+  @ApiProperty({ description: 'Outbound https product URL.' })
   readonly externalUrl: string;
+
+  @ApiProperty({ enum: ['draft', 'published'] satisfies [MarketplaceItemStatus, ...MarketplaceItemStatus[]] })
   readonly status: MarketplaceItemStatus;
 
   constructor(partial: Partial<MarketplaceItemDto>) {
@@ -24,9 +38,16 @@ export class MarketplaceItemDto {
 }
 
 export class MarketplaceMediaDto {
+  @ApiProperty({ description: 'Media id (UUID v4).' })
   readonly id: string;
+
+  @ApiProperty()
   readonly objectKey: string;
+
+  @ApiProperty({ enum: ['image', 'video', 'deck'] satisfies [MarketplaceMediaType, ...MarketplaceMediaType[]] })
   readonly mediaType: MarketplaceMediaType;
+
+  @ApiProperty()
   readonly sortOrder: number;
 
   constructor(partial: Partial<MarketplaceMediaDto>) {
@@ -35,6 +56,7 @@ export class MarketplaceMediaDto {
 }
 
 export class MarketplaceItemDetailDto extends MarketplaceItemDto {
+  @ApiProperty({ type: () => [MarketplaceMediaDto] })
   readonly media: MarketplaceMediaDto[];
 
   constructor(partial: Partial<MarketplaceItemDetailDto>) {

@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import type { CourseStatus } from '../interfaces/course.interface';
 
 /**
@@ -5,12 +6,25 @@ import type { CourseStatus } from '../interfaces/course.interface';
  * internal columns (created_at/updated_at) never reach this DTO.
  */
 export class CourseCardDto {
+  @ApiProperty({ description: 'Course id (UUID v4).' })
   readonly id: string;
+
+  @ApiProperty()
   readonly title: string;
+
+  @ApiProperty()
   readonly slug: string;
+
+  @ApiProperty()
   readonly description: string;
+
+  @ApiProperty({ description: 'Price in IDR.' })
   readonly price: number;
+
+  @ApiProperty({ type: String, nullable: true })
   readonly thumbnailUrl: string | null;
+
+  @ApiProperty({ enum: ['draft', 'published'] satisfies [CourseStatus, ...CourseStatus[]] })
   readonly status: CourseStatus;
 
   constructor(partial: Partial<CourseCardDto>) {
@@ -23,9 +37,16 @@ export class CourseCardDto {
  * no `content`, no `video_object_key`, no signed URL.
  */
 export class LessonSummaryDto {
+  @ApiProperty({ description: 'Lesson id (UUID v4).' })
   readonly id: string;
+
+  @ApiProperty()
   readonly title: string;
+
+  @ApiProperty({ description: 'Sequence position (order_index).' })
   readonly orderIndex: number;
+
+  @ApiProperty({ enum: ['draft', 'published'] satisfies [CourseStatus, ...CourseStatus[]] })
   readonly status: CourseStatus;
 
   constructor(partial: Partial<LessonSummaryDto>) {
@@ -34,6 +55,7 @@ export class LessonSummaryDto {
 }
 
 export class CourseDetailDto extends CourseCardDto {
+  @ApiProperty({ type: () => [LessonSummaryDto] })
   readonly lessons: LessonSummaryDto[];
 
   constructor(partial: Partial<CourseDetailDto>) {

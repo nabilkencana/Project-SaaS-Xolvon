@@ -9,19 +9,28 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CourseResourcesService } from './course-resources.service';
 import { CreateCourseResourceDto } from './dto/create-course-resource.dto';
-import type { CourseResourceDto } from './dto/course-resource-response.dto';
+import { CourseResourceDto } from './dto/course-resource-response.dto';
+import { OPENAPI_BEARER_SCHEME } from '../openapi/openapi.config';
 
 /**
  * Course resource routes (plan T6, SCHEMA.md §24-26). Admin-only mutations
  * with audit; there is no public resource endpoint in V1 — resources reach
  * entitled users through the enrollment-gated flow (T14+).
  */
+@ApiTags('course-resources')
 @Controller()
 export class CourseResourcesController {
   constructor(private readonly courseResourcesService: CourseResourcesService) {}
@@ -29,6 +38,9 @@ export class CourseResourcesController {
   /** Admin: create a resource under an existing lesson + audit `create`. */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Create a course resource under a lesson (admin)' })
+  @ApiCreatedResponse({ type: CourseResourceDto })
   @Post('lessons/:lessonId/resources')
   @HttpCode(HttpStatus.CREATED)
   async create(
@@ -42,6 +54,9 @@ export class CourseResourcesController {
   /** Admin: hard delete + audit `delete`. */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Delete a course resource (admin)' })
+  @ApiOkResponse({ type: CourseResourceDto })
   @Delete('resources/:id')
   @HttpCode(HttpStatus.OK)
   async remove(
