@@ -540,7 +540,7 @@ A complete, pre-configured Postman collection is included directly in the reposi
 ### Cloudflare D1 Migration Execution
 When operating against live Cloudflare D1 databases, execute migrations using Wrangler:
 ```bash
-npx wrangler d1 migrations apply xolvon-course-db --remote
+npx wrangler d1 migrations apply xolvon-staging --remote
 ```
 
 ### Production Checklist

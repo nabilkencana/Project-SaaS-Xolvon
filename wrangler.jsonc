@@ -5,8 +5,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "xolvon-course-db",
-      "database_id": "bef1c7f4-5cfc-42cf-b715-47f0eae1c3fb",
+      "database_name": "xolvon-staging",
+      "database_id": "c3b8fc08-1b99-46c3-a118-f6a344e00948",
       "migrations_dir": "src/database/migrations"
     }
   ]
