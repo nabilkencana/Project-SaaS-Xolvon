@@ -1118,4 +1118,333 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
       expect(auditSql).toContain('INSERT INTO admin_audit_logs');
     });
   });
+  describe('lessons + course resources (SCHEMA.md §18-26, §167-168)', () => {
+    const adminToken = () =>
+      signToken({
+        sub: 'admin-uuid-1',
+        email: 'admin@example.com',
+        role: 'admin',
+      });
+
+    const userToken = () =>
+      signToken({
+        sub: 'user-uuid-1',
+        email: 'e2e.user@example.com',
+        role: 'user',
+      });
+
+    const courseId = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+    const lessonId = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+    const resourceId = '9b2f8f9e-2c30-4c1a-8b3c-9c1f2f3f4f5f';
+
+    it('GET /api/courses/:slug/lessons returns published-only summaries ordered by order_index without private fields', async () => {
+      dbQueryOne.mockResolvedValueOnce({ id: courseId, status: 'published' });
+      dbQueryAll.mockResolvedValueOnce([
+        {
+          id: lessonId,
+          title: 'Zebra (order 2)',
+          order_index: 2,
+          status: 'published',
+        },
+        {
+          id: resourceId,
+          title: 'Alpha (order 1)',
+          order_index: 1,
+          status: 'published',
+        },
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/courses/video-saas/lessons')
+        .expect(200);
+
+      expect(res.body).toEqual([
+        { id: lessonId, title: 'Zebra (order 2)', orderIndex: 2, status: 'published' },
+        { id: resourceId, title: 'Alpha (order 1)', orderIndex: 1, status: 'published' },
+      ]);
+
+      const [courseSql] = dbQueryOne.mock.calls[0];
+      expect(courseSql).toContain('FROM courses WHERE slug = ?');
+
+      const [lessonsSql, lessonsParams] = dbQueryAll.mock.calls[0];
+      expect(lessonsSql).toContain("status = 'published'");
+      expect(lessonsSql).toContain('ORDER BY order_index ASC');
+      expect(lessonsSql).not.toContain('content');
+      expect(lessonsSql).not.toContain('video_object_key');
+      expect(lessonsParams).toEqual([courseId]);
+
+      const bodyText = JSON.stringify(res.body);
+      expect(bodyText).not.toContain('videoObjectKey');
+      expect(bodyText).not.toContain('content');
+    });
+
+    it('GET /api/courses/:slug/lessons returns 404 for a draft course', async () => {
+      dbQueryOne.mockResolvedValueOnce({ id: courseId, status: 'draft' });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/courses/draft-course/lessons')
+        .expect(404);
+
+      expect(res.body.message).toBe('Course tidak ditemukan.');
+      expect(dbQueryAll).not.toHaveBeenCalled();
+    });
+
+    it('POST /api/courses/:courseId/lessons requires auth (401) and admin role (403)', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/courses/${courseId}/lessons`)
+        .send({ title: 'Intro', orderIndex: 1 })
+        .expect(401);
+      expectDbUnused();
+
+      await request(app.getHttpServer())
+        .post(`/api/courses/${courseId}/lessons`)
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .send({ title: 'Intro', orderIndex: 1 })
+        .expect(403);
+      expectDbUnused();
+    });
+
+    it('POST /api/courses/:courseId/lessons creates a draft lesson and audits create (admin)', async () => {
+      dbQueryOne.mockResolvedValueOnce({ id: courseId, status: 'draft' });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/courses/${courseId}/lessons`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({
+          title: 'Intro',
+          content: 'Hello world',
+          orderIndex: 1,
+        })
+        .expect(201);
+
+      expect(res.body).toMatchObject({
+        courseId,
+        title: 'Intro',
+        content: 'Hello world',
+        orderIndex: 1,
+        status: 'draft',
+      });
+      expect(res.body.id).toBeDefined();
+
+      const [lessonSql] = dbExecute.mock.calls[0];
+      expect(lessonSql).toContain('INSERT INTO lessons');
+      expect(lessonSql).toContain("'draft'");
+      const [auditSql] = dbExecute.mock.calls[1];
+      expect(auditSql).toContain('INSERT INTO admin_audit_logs');
+    });
+
+    it('POST /api/courses/:courseId/lessons returns 404 when the course is missing', async () => {
+      dbQueryOne.mockResolvedValueOnce(undefined);
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/courses/${courseId}/lessons`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({ title: 'Intro', orderIndex: 1 })
+        .expect(404);
+
+      expect(res.body.message).toBe('Course tidak ditemukan.');
+      expect(dbExecute).not.toHaveBeenCalled();
+    });
+
+    it('PATCH /api/lessons/:id applies provided fields and audits update', async () => {
+      dbQueryOne.mockResolvedValueOnce({
+        id: lessonId,
+        course_id: courseId,
+        title: 'Intro',
+        content: 'Old body',
+        video_object_key: null,
+        order_index: 1,
+        status: 'draft',
+        created_at: new Date().toISOString(),
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/lessons/${lessonId}`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({ title: 'Renamed', orderIndex: 5 })
+        .expect(200);
+
+      expect(res.body).toMatchObject({ title: 'Renamed', orderIndex: 5 });
+
+      const [updateSql] = dbExecute.mock.calls[0];
+      expect(updateSql).toContain('UPDATE lessons SET');
+      expect(updateSql).toContain('title = ?');
+      expect(updateSql).toContain('order_index = ?');
+      const [auditSql] = dbExecute.mock.calls[1];
+      expect(auditSql).toContain('INSERT INTO admin_audit_logs');
+    });
+
+    it('PATCH /api/lessons/:id/reorder writes order_index and audits update', async () => {
+      dbQueryOne.mockResolvedValueOnce({
+        id: lessonId,
+        course_id: courseId,
+        title: 'Intro',
+        content: null,
+        video_object_key: null,
+        order_index: 1,
+        status: 'published',
+        created_at: new Date().toISOString(),
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/lessons/${lessonId}/reorder`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({ orderIndex: 3 })
+        .expect(200);
+
+      expect(res.body).toMatchObject({ orderIndex: 3 });
+
+      const [updateSql, updateParams] = dbExecute.mock.calls[0];
+      expect(updateSql).toContain('UPDATE lessons SET order_index = ? WHERE id = ?');
+      expect(updateParams).toEqual([3, lessonId]);
+      const [auditSql] = dbExecute.mock.calls[1];
+      expect(auditSql).toContain('INSERT INTO admin_audit_logs');
+    });
+
+    it('POST /api/lessons/:id/publish and unpublish transition status with audit', async () => {
+      dbQueryOne.mockResolvedValueOnce({
+        id: lessonId,
+        course_id: courseId,
+        title: 'Intro',
+        content: null,
+        video_object_key: null,
+        order_index: 1,
+        status: 'draft',
+        created_at: new Date().toISOString(),
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/lessons/${lessonId}/publish`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .expect(200);
+
+      expect(res.body).toMatchObject({ status: 'published' });
+      const [publishSql] = dbExecute.mock.calls[0];
+      expect(publishSql).toContain("UPDATE lessons SET status = 'published'");
+      const [publishAuditSql] = dbExecute.mock.calls[1];
+      expect(publishAuditSql).toContain('INSERT INTO admin_audit_logs');
+
+      dbQueryOne.mockReset();
+      dbQueryOne.mockResolvedValueOnce({
+        id: lessonId,
+        course_id: courseId,
+        title: 'Intro',
+        content: null,
+        video_object_key: null,
+        order_index: 1,
+        status: 'published',
+        created_at: new Date().toISOString(),
+      });
+      dbExecute.mockReset();
+
+      await request(app.getHttpServer())
+        .post(`/api/lessons/${lessonId}/unpublish`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .expect(200);
+
+      const [unpublishSql] = dbExecute.mock.calls[0];
+      expect(unpublishSql).toContain("UPDATE lessons SET status = 'draft'");
+      const [unpublishAuditSql] = dbExecute.mock.calls[1];
+      expect(unpublishAuditSql).toContain('INSERT INTO admin_audit_logs');
+    });
+
+    it('DELETE /api/lessons/:id removes resources first, then the lesson, and audits delete', async () => {
+      dbQueryOne.mockResolvedValueOnce({
+        id: lessonId,
+        course_id: courseId,
+        title: 'Intro',
+        content: null,
+        video_object_key: null,
+        order_index: 1,
+        status: 'draft',
+        created_at: new Date().toISOString(),
+      });
+
+      const res = await request(app.getHttpServer())
+        .delete(`/api/lessons/${lessonId}`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .expect(200);
+
+      expect(res.body).toMatchObject({ id: lessonId });
+
+      expect(dbExecute).toHaveBeenCalledTimes(3);
+      const [resourcesSql] = dbExecute.mock.calls[0];
+      expect(resourcesSql).toContain('DELETE FROM course_resources WHERE lesson_id = ?');
+      const [lessonSql] = dbExecute.mock.calls[1];
+      expect(lessonSql).toContain('DELETE FROM lessons WHERE id = ?');
+      const [auditSql] = dbExecute.mock.calls[2];
+      expect(auditSql).toContain('INSERT INTO admin_audit_logs');
+    });
+
+    it('POST /api/lessons/:lessonId/resources rejects type=quiz with 400 (SCHEMA.md §25 allowlist)', async () => {
+      const res = await request(app.getHttpServer())
+        .post(`/api/lessons/${lessonId}/resources`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({ type: 'quiz', objectKey: 'lessons/x/quiz.pdf', title: 'Quiz' })
+        .expect(400);
+
+      expect(JSON.stringify(res.body.message)).toContain('pdf, resource, assignment');
+      expectDbUnused();
+    });
+
+    it('POST /api/lessons/:lessonId/resources creates a resource and audits create; DELETE audits delete; unknown id → 404', async () => {
+      dbQueryOne.mockResolvedValueOnce({ id: lessonId, course_id: courseId });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/lessons/${lessonId}/resources`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .send({
+          type: 'pdf',
+          objectKey: 'lessons/lesson-1/slides.pdf',
+          title: 'Slides',
+        })
+        .expect(201);
+
+      expect(res.body).toMatchObject({
+        lessonId,
+        courseId,
+        type: 'pdf',
+        objectKey: 'lessons/lesson-1/slides.pdf',
+        title: 'Slides',
+      });
+
+      const [resourceSql] = dbExecute.mock.calls[0];
+      expect(resourceSql).toContain('INSERT INTO course_resources');
+      const [auditSql] = dbExecute.mock.calls[1];
+      expect(auditSql).toContain('INSERT INTO admin_audit_logs');
+
+      dbQueryOne.mockReset();
+      dbExecute.mockReset();
+      dbQueryOne.mockResolvedValueOnce({
+        id: resourceId,
+        lesson_id: lessonId,
+        course_id: courseId,
+        type: 'pdf',
+        object_key: 'lessons/lesson-1/slides.pdf',
+        title: 'Slides',
+        metadata: null,
+        created_at: new Date().toISOString(),
+      });
+
+      await request(app.getHttpServer())
+        .delete(`/api/resources/${resourceId}`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .expect(200);
+
+      const [deleteSql] = dbExecute.mock.calls[0];
+      expect(deleteSql).toContain('DELETE FROM course_resources WHERE id = ?');
+      const [deleteAuditSql] = dbExecute.mock.calls[1];
+      expect(deleteAuditSql).toContain('INSERT INTO admin_audit_logs');
+
+      dbQueryOne.mockReset();
+      dbExecute.mockReset();
+      dbQueryOne.mockResolvedValueOnce(undefined);
+
+      await request(app.getHttpServer())
+        .delete(`/api/resources/${resourceId}`)
+        .set('Authorization', `Bearer ${await adminToken()}`)
+        .expect(404);
+      expect(dbExecute).not.toHaveBeenCalled();
+    });
+  });
 });
