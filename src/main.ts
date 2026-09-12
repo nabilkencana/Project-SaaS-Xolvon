@@ -3,6 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { resolveCorsOrigins } from './config/cors';
+import { enableSecurityHeaders } from './security/security-headers';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
@@ -12,6 +13,17 @@ async function bootstrap() {
 
   // Global route prefix — all routes served under /api/*
   app.setGlobalPrefix('api');
+
+  // Security headers (Helmet) — wired BEFORE CORS, validation pipes and the
+  // exception filter so every response, including preflight and error
+  // bodies, carries the CSP / frameguard / nosniff / Referrer-Policy set.
+  // HSTS is emitted only when APP_ENV=production (DL-021). This also removes
+  // Express' default X-Powered-By fingerprint.
+  enableSecurityHeaders(app, {
+    appEnv: configService.get<string>('APP_ENV'),
+    cspConnectSrc: configService.get<string>('CSP_CONNECT_SRC'),
+    r2Endpoint: configService.get<string>('R2_ENDPOINT'),
+  });
 
   // CORS — explicit environment whitelist; credentials stay enabled, so
   // wildcard origins are rejected at bootstrap by resolveCorsOrigins().
