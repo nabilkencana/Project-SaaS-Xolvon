@@ -5,11 +5,11 @@ disempurnakan penuh di T16 (`.omo/plans/xolvon-backend-build.md`).
 
 - **Status dokumen**: skeleton per T4. Kolom status menandai `aktif` (sudah ada di repo) atau `planned` (didefinisikan plan, belum diimplementasikan).
 - **Global prefix**: semua route dilayani di bawah `/api/*` (`src/main.ts`).
-- **Auth**: `Authorization: Bearer <accessToken>` (JWT). Role: `user` (default) dan `admin` (`RolesGuard`).
+- **Auth**: `Authorization: Bearer <accessToken>` (JWT) — Bearer-only, tidak ada cookie session (DL-016/DL-018). Role: `user` (default) dan `admin` (`RolesGuard`). Mutation browser request (`POST/PATCH/DELETE`) additionally lolos request-integrity guard `src/common/guards/request-integrity.guard.ts` (T3): `Origin`/`Referer` harus ada dalam set asal yang diizinkan, `Sec-Fetch-Site: cross-site` ditolak; request non-browser tanpa header asal lolos (tetap butuh Bearer valid).
 - **Validasi**: global `ValidationPipe` (`whitelist`, `forbidNonWhitelisted`, `transform`) — field di luar DTO ditolak.
 - **Error**: global `AllExceptionsFilter` — respons aman, tanpa stack trace/internal.
 - **Pagination**: kontrak terkunci di decision log DL-011 — `?page=` 1-based, `?limit=` default 20 maks 100, respons `{items, page, limit, total}`.
-- **Rate limit**: `/auth/login` + `/auth/register` 5/menit/IP (DL-012, diimplementasikan T17).
+- **Rate limit** (per IP, jendela 60 detik, via `@nestjs/throttler` named groups — DL-012 + implementasi T6 di `src/config/throttle.config.ts`): `/auth/login` + `/auth/register` **5/min**; katalog publik list (`GET /courses`, `/projects`, `/marketplace`, `/collective`, `/home`) **30/min** (group `catalog`); `GET /search` **30/min** (group `search`); signed-URL issuance (`GET /lessons/:id/video-url`, `POST /admin/media/upload-url`, `POST /admin/media/read-url`) **10/min** (group `signed`); `POST /orders` **10/min** (group `order`); rute tak berhias lain **100/min** (group `default`). Health `GET /api` dikecualikan dari SEMUA group (`@SkipThrottle` eksplisit per nama tracker).
 - **Audit**: mutation sensitif (verify/activate/revoke/publish/cancel) menulis `admin_audit_logs` (plan T11/T15).
 
 ---
@@ -57,6 +57,12 @@ disempurnakan penuh di T16 (`.omo/plans/xolvon-backend-build.md`).
 
 `SearchResultDto` hanya memuat `{type, id, title, slug, description, status}`. Search tidak pernah mengembalikan draft, private, admin-only, unpublished, atau revoked content; seluruh search term dan pagination memakai DTO validation serta bind parameters.
 
+### Home (`src/home/home.controller.ts`)
+
+| Method | Path | Auth | Role | Status | Deskripsi | Request | Response |
+|---|---|---|---|---|---|---|---|
+| GET | `/api/home` | Public | - | aktif | Agregasi homepage published-only (featured courses, projects, marketplace, collective) tanpa N+1; throtled group `catalog` | - | `HomeResponseDTO` `{courses[], projects[], marketplace[], collective[]}` (200) |
+
 ### Courses (`src/courses/courses.controller.ts`)
 
 | Method | Path | Auth | Role | Status | Deskripsi | Request | Response |
@@ -67,6 +73,7 @@ disempurnakan penuh di T16 (`.omo/plans/xolvon-backend-build.md`).
 | PATCH | `/api/courses/:id` | Bearer JWT | admin | aktif | Update parsial + audit `update`; slug baru dicek unik | `UpdateCourseDto` | `CourseCardDto` (200) |
 | POST | `/api/courses/:id/publish` | Bearer JWT | admin | aktif | Transisi ketat draft → published, gate field wajib (description, price) + audit `publish` | - | `CourseCardDto` (200) |
 | POST | `/api/courses/:id/unpublish` | Bearer JWT | admin | aktif | Transisi ketat published → draft + audit `unpublish` | - | `CourseCardDto` (200) |
+| GET | `/api/courses/:slug/lessons` | Public | - | aktif | Daftar lesson `published` milik course `published` (`src/lessons/course-lessons.controller.ts`), urut `order_index` ASC; ringkasan aman tanpa `content`/`video_object_key` | - | `LessonSummaryDto[]` (200) |
 
 `CourseCardDto` (SCHEMA.md §16): `{id, title, slug, description, price,
 thumbnailUrl, status}`. `CourseDetailDto` menambahkan `lessons:
@@ -224,9 +231,14 @@ untuk modul lain; `metadata` tidak pernah keluar ke API publik/user.
 
 ### Orders (tambahan) — aktif (T15)
 
-| Method | Path | Auth | Role | Deskripsi |
-|---|---|---|---|---|
-| POST | `/api/admin/orders/:id/cancel` | Bearer JWT | admin | Cancel order, hanya dari `pending` → `cancelled` + audit |
+Endpoint sudah pindah ke tabel aktif di atas pada path kanonik
+`POST /api/orders/:id/cancel` (controller `src/orders/orders.controller.ts`,
+`@Controller('orders')` + `@Post(':id/cancel')`). Catatan rekonsiliasi:
+dokumen awal pernah menuliskannya sebagai `POST /api/admin/orders/:id/cancel`;
+path tersebut TIDAK pernah ada di controller dan TIDAK ada di `docs/openapi.json`
+maupun Postman — kontrak kanonik adalah `POST /api/orders/:id/cancel`. Semantik
+tetap: hanya transisi `pending` → `cancelled` yang diizinkan, dan cancel
+menulis audit (plan T15).
 
 ### Search — aktif (T16)
 

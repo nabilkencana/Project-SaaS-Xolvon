@@ -5,7 +5,7 @@ Format entri mengikuti `PRD.md` §92 (Open Decision Protocol) dan aturan `RULES.
 - Tanggal dokumen dibuat: 2026-09-12 (plan T4, `.omo/plans/xolvon-backend-build.md`).
 - Entri `DL-001`–`DL-010` adalah keputusan owner yang terkunci (draft `.omo/drafts/xolvon-backend-build.md` bagian "Keputusan owner (LOCKED oleh user)").
 - Entri `DL-011`–`DL-012` adalah default yang diadopsi backend dan menunggu tanda tangan owner.
-- Konflik antar-dokumen dicatat di bagian [Konflik dokumen](#konflik-dokumen--tercatat--resolusinya).
+- Konflik antar-dokumen dicatat di bagian [Konflik dokumen](#konflik-dokumen-tercatat--resolusinya).
 - Item yang masih terbuka diindeks di bagian [Keputusan masih terbuka](#keputusan-masih-terbuka) tanpa entri final.
 
 ---

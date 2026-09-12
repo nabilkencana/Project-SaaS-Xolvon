@@ -99,9 +99,10 @@ curl -s http://localhost:3000/api/courses   # public catalog, paginated
 
 Names and purposes only — **no secret values belong in this repo, in Git, in
 logs, or in any document.** The three templates are `.env.example` (local,
-16 names), `.env.staging.example` and `.env.production.example` (14 names
-each). Two further names are read at runtime but are optional (see rows
-marked *runtime-optional*).
+17 names), `.env.staging.example` and `.env.production.example` (15 names
+each); `CORS_ALLOWED_ORIGINS` is present but blank in all three. One further
+name is read at runtime but is not in the example files (see the row marked
+*runtime-optional*).
 
 | Variable | Purpose | Required |
 |---|---|---|
@@ -118,7 +119,7 @@ marked *runtime-optional*).
 | `R2_SECRET_ACCESS_KEY` | R2 secret access key. | Required when `STORAGE_DRIVER=r2` |
 | `JWT_SECRET` | HS secret for signing/verifying access tokens (`AuthGuard`). | Always required (min 32 chars) |
 | `FRONTEND_URL` | Primary allowed browser origin; CORS and request-integrity fallback when `CORS_ALLOWED_ORIGINS` is unset. | Always required (valid `http(s)` URL) |
-| `CORS_ALLOWED_ORIGINS` | Comma-separated explicit whitelist of allowed origins (credentials mode; wildcards rejected). Also the request-integrity guard's allowed-origin set. Falls back to `FRONTEND_URL`, then `http://localhost:3001`. | Runtime-optional (not in the example files) |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated explicit whitelist of allowed origins (credentials mode; wildcards rejected). Also the request-integrity guard's allowed-origin set. Falls back to `FRONTEND_URL`, then `http://localhost:3001`. | Optional (blank in all three example files; set real origins per environment) |
 | `CSP_CONNECT_SRC` | Comma/space-separated origins added to CSP `connect-src`/`style-src`/`img-src`/`font-src`. Malformed entries are dropped. Defaults to `'self'`. | Runtime-optional (not in the example files) |
 | `TRUST_PROXY_HOPS` | Express `trust proxy` hop count for client-IP resolution behind the edge proxy. Unset/blank → `false` (fail closed: `X-Forwarded-For` cannot mint fresh throttle buckets); non-numeric → bootstrap aborts. Staging/production templates set `1`. | Optional (validated at bootstrap, not by `env.validation.ts`) |
 | `ADMIN_BOOTSTRAP_EMAIL` | Email of the first admin account, consumed only by `npm run seed:admin`. | Required for `seed:admin` |
@@ -131,7 +132,7 @@ Cross-field validation lives in `src/config/env.validation.ts` and keys off
 
 | Command | What it does |
 |---|---|
-| `npm run test:esm` | Unit/behavior suite (Jest with `--experimental-vm-modules`, via cross-env). Current baseline on this branch: 42 suites / 399 tests. |
+| `npm run test:esm` | Unit/behavior suite (Jest with `--experimental-vm-modules`, via cross-env). Current baseline on this branch: 44 suites / 411 tests. |
 | `npm run test:e2e` | End-to-end suite (`test/jest-e2e.json` harness with overridden providers). Baseline: 107 tests. Runs fully against in-memory/local SQLite — zero cloud credentials. |
 | `npm run build` | `nest build` → `dist/`. |
 | `npm run lint` | `oxlint src/ test/`. |
@@ -178,16 +179,20 @@ Per DL-019, official PDFs are produced with Playwright/Chromium and committed:
 npm run docs:pdf
 ```
 
-- Runs `scripts/docs-pdf.mjs`: renders every `docs/*.md` to
-  `docs/pdf/<name>.pdf` (A4, Chromium print pipeline).
+- Runs `scripts/docs-pdf.mjs`: renders the **four official handover docs**
+  (`README.md`, `architecture.md`, `security.md`, `deployment-runbook.md`) to
+  `docs/pdf/<name>.pdf` (A4, Chromium print pipeline), plus a combined
+  `docs/pdf/xolvon-backend-full-documentation.pdf` in that order. It does **not**
+  render the other `docs/*.md` (`api-contract`, `decision-log`, `qa-results`,
+  `production-operations`) — the deliverable set is pinned in the script.
 - Requires the Chromium browser binary once per machine:
   `npx playwright install chromium`.
 - Output is deterministic for the same Markdown input; regenerate and
   secret-scan whenever these docs change.
 - `docs/Xolvon-API-Documentation.pdf` (and its generator
-  `scripts/generate-api-pdf.py`) is **not** part of this workflow — it came
-  from an out-of-band commit, is non-conforming to DL-019, and is scheduled
-  for removal/replacement at plan T9. See DL-026 in
+  `scripts/generate-api-pdf.py`) were a non-conforming, out-of-band pair
+  (per DL-019) and were **deleted at plan T9**; they are not part of this
+  workflow and no longer exist in the tree. See DL-026 in
   [`decision-log.md`](decision-log.md).
 
 ## 7. House rules for contributors
