@@ -189,6 +189,27 @@ describe('AuthService', () => {
       );
     });
 
+    it('should return the identical generic message for unknown email and wrong password (anti-enumeration, PRD §104)', async () => {
+      mockDb.queryOne.mockResolvedValueOnce(undefined); // unknown email
+      const unknownEmailError = await service
+        .login(loginDto)
+        .catch((error: unknown) => error);
+
+      mockDb.queryOne.mockResolvedValueOnce(sampleUserRow); // known user...
+      mockPasswordService.verify.mockResolvedValueOnce(false); // ...wrong password
+      const wrongPasswordError = await service
+        .login(loginDto)
+        .catch((error: unknown) => error);
+
+      expect(unknownEmailError).toBeInstanceOf(UnauthorizedException);
+      expect(wrongPasswordError).toBeInstanceOf(UnauthorizedException);
+      expect(unknownEmailError.message).toBe('Invalid email or password.');
+      expect(wrongPasswordError.message).toBe(unknownEmailError.message);
+      expect(wrongPasswordError.getStatus()).toBe(
+        unknownEmailError.getStatus(),
+      );
+    });
+
     it('should successfully log in, hash refresh token with SHA-256 before persisting, and return plaintext refresh token to client', async () => {
       // User lookup
       mockDb.queryOne.mockResolvedValueOnce(sampleUserRow);
@@ -293,7 +314,7 @@ describe('AuthService', () => {
       );
     });
 
-    it('should throw UnauthorizedException and delete session if expired', async () => {
+    it('should throw 401 UnauthorizedException with the generic message and delete the session row if expired', async () => {
       const expiredSessionRow: SessionRow = {
         ...validSessionRow,
         expires_at: new Date(Date.now() - 1000).toISOString(), // expired 1s ago
@@ -301,9 +322,13 @@ describe('AuthService', () => {
 
       mockDb.queryOne.mockResolvedValueOnce(expiredSessionRow);
 
-      await expect(service.refresh(rawRefreshToken)).rejects.toThrow(
-        UnauthorizedException,
-      );
+      const error = (await service
+        .refresh(rawRefreshToken)
+        .catch((e: unknown) => e)) as UnauthorizedException;
+
+      expect(error).toBeInstanceOf(UnauthorizedException);
+      expect(error.getStatus()).toBe(401);
+      expect(error.message).toBe('Invalid or expired refresh token.');
 
       // Verify expired session was deleted using session id
       expect(mockDb.execute).toHaveBeenNthCalledWith(

@@ -2,6 +2,7 @@ import './e2e-setup';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { getOptionsToken } from '@nestjs/throttler';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -18,6 +19,12 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
   let fetchSpy: jest.SpyInstance;
   let jwtService: JwtService;
 
+  // Shared PasswordService mock so individual tests can stub verify() once.
+  const passwordMock = {
+    hash: jest.fn(async () => 'hashed-password'),
+    verify: jest.fn(async () => true),
+  };
+
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -29,10 +36,7 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
         execute: jest.fn(),
       })
       .overrideProvider(PasswordService)
-      .useValue({
-        hash: jest.fn(async () => 'hashed-password'),
-        verify: jest.fn(async () => true),
-      })
+      .useValue(passwordMock)
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -225,6 +229,32 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
         .expect(401);
 
       expect(res.body.message).toBe('Invalid email or password.');
+    });
+
+    it('returns a response body identical to the unknown-email failure for a wrong password (anti-enumeration)', async () => {
+      dbQueryOne.mockResolvedValueOnce(userRow);
+      passwordMock.verify.mockResolvedValueOnce(false);
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: 'e2e.user@example.com', password: 'WrongPassword1' })
+        .expect(401);
+
+      dbQueryOne.mockResolvedValueOnce(undefined);
+      const unknownEmailRes = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: 'ghost@example.com', password: 'whatever1' })
+        .expect(401);
+
+      expect(res.body.message).toBe('Invalid email or password.');
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          statusCode: unknownEmailRes.body.statusCode,
+          message: unknownEmailRes.body.message,
+          error: unknownEmailRes.body.error,
+        }),
+      );
+      expect(unknownEmailRes.body.message).toBe(res.body.message);
     });
   });
 
@@ -1720,6 +1750,330 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
         .set('Authorization', `Bearer ${await adminToken()}`)
         .expect(404);
       expect(dbExecute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('admin — operational reads, admin-only (SCHEMA.md §81-83, PRD §43-45)', () => {
+    const userId = '0b9e6b5e-1111-4222-8333-444455556666';
+
+    const adminJwt = () =>
+      signToken({ sub: 'admin-uuid-1', email: 'admin@example.com', role: 'admin' });
+    const userJwt = () =>
+      signToken({ sub: 'user-uuid-1', email: 'e2e.user@example.com', role: 'user' });
+
+    const userRow = {
+      id: userId,
+      name: 'E2E User',
+      email: 'e2e.user@example.com',
+      phone: '+62812345678',
+      role: 'user',
+      status: 'active',
+      created_at: '2026-09-01T00:00:00.000Z',
+      enrollment_count: 2,
+    };
+
+    const orderRow = {
+      id: 'order-1',
+      status: 'paid',
+      amount: 250000,
+      created_at: '2026-09-02T00:00:00.000Z',
+      updated_at: '2026-09-03T00:00:00.000Z',
+      user_id: userId,
+      user_name: 'E2E User',
+      user_email: 'e2e.user@example.com',
+      user_phone: '+62812345678',
+      course_titles: 'Video SaaS Mastery\u001fCRM Blueprint',
+      has_active_enrollment: 1,
+      granted_by_names: 'Admin One',
+      granted_at: '2026-09-03T00:00:00.000Z',
+    };
+
+    describe('security matrix — every /api/admin/* route', () => {
+      it('returns 401 for anonymous requests on all admin routes and never touches the DB', async () => {
+        await request(app.getHttpServer()).get('/api/admin/users').expect(401);
+        await request(app.getHttpServer()).get(`/api/admin/users/${userId}`).expect(401);
+        await request(app.getHttpServer()).get('/api/admin/orders').expect(401);
+        await request(app.getHttpServer()).get('/api/admin/overview').expect(401);
+        expectDbUnused();
+      });
+
+      it('returns 403 for a non-admin user on all admin routes and never touches the DB', async () => {
+        const token = await userJwt();
+
+        await request(app.getHttpServer())
+          .get('/api/admin/users')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(403);
+        await request(app.getHttpServer())
+          .get(`/api/admin/users/${userId}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(403);
+        await request(app.getHttpServer())
+          .get('/api/admin/orders')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(403);
+        await request(app.getHttpServer())
+          .get('/api/admin/overview')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(403);
+        expectDbUnused();
+      });
+    });
+
+    it('GET /api/admin/users returns the paginated envelope with enrollmentCount and never the password hash', async () => {
+      dbQueryAll.mockResolvedValueOnce([userRow]);
+      dbQueryOne.mockResolvedValueOnce({ total: 1 });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/admin/users')
+        .set('Authorization', `Bearer ${await adminJwt()}`)
+        .expect(200);
+
+      expect(res.body).toMatchObject({ page: 1, limit: 20, total: 1 });
+      expect(res.body.items[0]).toEqual({
+        id: userId,
+        name: 'E2E User',
+        email: 'e2e.user@example.com',
+        phone: '+62812345678',
+        role: 'user',
+        status: 'active',
+        createdAt: '2026-09-01T00:00:00.000Z',
+        enrollmentCount: 2,
+      });
+      expect(JSON.stringify(res.body)).not.toContain('password_hash');
+
+      const [rowsSql] = dbQueryAll.mock.calls[0];
+      expect(rowsSql).toContain('LEFT JOIN enrollments e ON e.user_id = u.id');
+      expect(rowsSql).toContain('GROUP BY u.id');
+    });
+
+    it('GET /api/admin/users binds ?q= as a contains-LIKE parameter on email and name', async () => {
+      dbQueryAll.mockResolvedValueOnce([]);
+      dbQueryOne.mockResolvedValueOnce({ total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/admin/users?q=video')
+        .set('Authorization', `Bearer ${await adminJwt()}`)
+        .expect(200);
+
+      const [rowsSql, rowsParams] = dbQueryAll.mock.calls[0];
+      expect(rowsSql).toContain("u.email LIKE ? ESCAPE '\\'");
+      expect(rowsSql).toContain("u.name LIKE ? ESCAPE '\\'");
+      expect(rowsParams[0]).toBe('%video%');
+      expect(rowsParams[1]).toBe('%video%');
+    });
+
+    it('GET /api/admin/users/:id returns user detail with enrollments and orders; unknown id → 404', async () => {
+      dbQueryOne.mockResolvedValueOnce(userRow);
+      dbQueryAll
+        .mockResolvedValueOnce([
+          {
+            id: 'enr-1',
+            course_id: 'course-1',
+            status: 'active',
+            granted_at: '2026-09-03T00:00:00.000Z',
+            course_title: 'Video SaaS Mastery',
+            course_slug: 'video-saas',
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'order-1',
+            status: 'paid',
+            amount: 250000,
+            created_at: '2026-09-02T00:00:00.000Z',
+          },
+        ]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/admin/users/${userId}`)
+        .set('Authorization', `Bearer ${await adminJwt()}`)
+        .expect(200);
+
+      expect(res.body.enrollments[0]).toMatchObject({
+        courseId: 'course-1',
+        courseTitle: 'Video SaaS Mastery',
+        courseSlug: 'video-saas',
+        status: 'active',
+      });
+      expect(res.body.orders[0]).toEqual({
+        id: 'order-1',
+        status: 'paid',
+        amount: 250000,
+        createdAt: '2026-09-02T00:00:00.000Z',
+      });
+      expect(JSON.stringify(res.body)).not.toContain('password_hash');
+
+      dbQueryOne.mockReset();
+      dbQueryAll.mockReset();
+      dbQueryOne.mockResolvedValueOnce(undefined);
+
+      await request(app.getHttpServer())
+        .get(`/api/admin/users/${userId}`)
+        .set('Authorization', `Bearer ${await adminJwt()}`)
+        .expect(404);
+    });
+
+    it('GET /api/admin/orders returns PRD §45 columns with activationStatus derived from enrollments', async () => {
+      dbQueryAll.mockResolvedValueOnce([orderRow]);
+      dbQueryOne.mockResolvedValueOnce({ total: 1 });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/admin/orders')
+        .set('Authorization', `Bearer ${await adminJwt()}`)
+        .expect(200);
+
+      expect(res.body).toMatchObject({ page: 1, limit: 20, total: 1 });
+      expect(res.body.items[0]).toEqual({
+        id: 'order-1',
+        user: {
+          id: userId,
+          name: 'E2E User',
+          email: 'e2e.user@example.com',
+          phone: '+62812345678',
+        },
+        courseTitles: ['Video SaaS Mastery', 'CRM Blueprint'],
+        amount: 250000,
+        status: 'paid',
+        createdAt: '2026-09-02T00:00:00.000Z',
+        updatedAt: '2026-09-03T00:00:00.000Z',
+        activationStatus: 'active',
+        grantedBy: 'Admin One',
+        grantedAt: '2026-09-03T00:00:00.000Z',
+      });
+
+      const [rowsSql] = dbQueryAll.mock.calls[0];
+      expect(rowsSql).toContain(
+        'LEFT JOIN enrollments e ON e.user_id = o.user_id AND e.course_id = oi.course_id',
+      );
+      expect(rowsSql).toContain('GROUP BY o.id');
+      expect(rowsSql).not.toContain('activation_status');
+    });
+
+    it('GET /api/admin/orders binds ?status= and ?q= filters as parameters', async () => {
+      dbQueryAll.mockResolvedValueOnce([]);
+      dbQueryOne.mockResolvedValueOnce({ total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders?status=pending&q=user@example.com')
+        .set('Authorization', `Bearer ${await adminJwt()}`)
+        .expect(200);
+
+      const [rowsSql, rowsParams] = dbQueryAll.mock.calls[0];
+      expect(rowsSql).toContain('o.status = ?');
+      expect(rowsSql).toContain("u.email LIKE ? ESCAPE '\\'");
+      expect(rowsParams).toEqual(['pending', '%user@example.com%', 20, 0]);
+    });
+
+    it('GET /api/admin/orders rejects an invalid ?status= with 400 before touching the DB', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/admin/orders?status=bogus')
+        .set('Authorization', `Bearer ${await adminJwt()}`)
+        .expect(400);
+      expect(JSON.stringify(res.body.message)).toContain('pending');
+      expectDbUnused();
+    });
+
+    it('GET /api/admin/overview returns the three counts from three COUNT queries', async () => {
+      dbQueryOne
+        .mockResolvedValueOnce({ count: 7 })
+        .mockResolvedValueOnce({ count: 3 })
+        .mockResolvedValueOnce({ count: 5 });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/admin/overview')
+        .set('Authorization', `Bearer ${await adminJwt()}`)
+        .expect(200);
+
+      expect(res.body).toEqual({ userCount: 7, pendingOrders: 3, activeEnrollments: 5 });
+
+      const sqls = dbQueryOne.mock.calls.map(([sql]) => sql as string);
+      expect(sqls[0]).toContain("FROM users WHERE role = 'user'");
+      expect(sqls[1]).toContain("FROM orders WHERE status = 'pending'");
+      expect(sqls[2]).toContain("FROM enrollments WHERE status = 'active'");
+    });
+  });
+
+  describe('rate limiting (throttler guard via real pipeline)', () => {
+    let throttleApp: INestApplication<App>;
+    const tightLimit = 3;
+    const badLogin = { email: 'ghost@example.com', password: 'whatever1' };
+
+    beforeAll(async () => {
+      // Separate app instance: in-memory throttler storage is per-app, so the
+      // counters here are deterministic and isolated from the suites above.
+      const moduleFixture: TestingModule = await Test.createTestingModule({
+        imports: [AppModule],
+      })
+        .overrideProvider(DatabaseService)
+        .useValue({
+          queryAll: jest.fn(),
+          queryOne: jest.fn(),
+          execute: jest.fn(),
+        })
+        .overrideProvider(PasswordService)
+        .useValue({
+          hash: jest.fn(async () => 'hashed-password'),
+          verify: jest.fn(async () => false),
+        })
+        // Tight module-level override: 3 req/min for routes WITHOUT a
+        // route-level @Throttle. Routes WITH @Throttle (login, register)
+        // keep their decorator limits — route metadata overrides module
+        // options by design in @nestjs/throttler.
+        .overrideProvider(getOptionsToken())
+        .useValue([{ name: 'default', ttl: 60000, limit: tightLimit }])
+        .compile();
+
+      throttleApp = moduleFixture.createNestApplication();
+      throttleApp.setGlobalPrefix('api');
+      throttleApp.useGlobalPipes(
+        new ValidationPipe({
+          whitelist: true,
+          forbidNonWhitelisted: true,
+          transform: true,
+        }),
+      );
+      throttleApp.useGlobalFilters(new AllExceptionsFilter());
+      await throttleApp.init();
+    });
+
+    afterAll(async () => {
+      await throttleApp.close();
+    });
+
+    it('allows the 5/min login route limit: 5 rapid failed logins get 401, the 6th gets 429', async () => {
+      const server = throttleApp.getHttpServer();
+      for (let i = 0; i < 5; i++) {
+        await request(server).post('/api/auth/login').send(badLogin).expect(401);
+      }
+
+      const res = await request(server)
+        .post('/api/auth/login')
+        .send(badLogin)
+        .expect(429);
+
+      expect(res.body.statusCode).toBe(429);
+      expect(res.body.message).toBe('ThrottlerException: Too Many Requests');
+      expect(JSON.stringify(res.body)).not.toContain('SQLITE');
+      expect(JSON.stringify(res.body)).not.toContain('SELECT');
+    });
+
+    it('applies the tight module override (limit 3) to routes without @Throttle: 3 rapid refreshes get 401, the 4th gets 429', async () => {
+      const server = throttleApp.getHttpServer();
+      for (let i = 0; i < tightLimit; i++) {
+        await request(server)
+          .post('/api/auth/refresh')
+          .send({ refreshToken: 'not-a-valid-token' })
+          .expect(401);
+      }
+
+      const res = await request(server)
+        .post('/api/auth/refresh')
+        .send({ refreshToken: 'not-a-valid-token' })
+        .expect(429);
+
+      expect(res.body.statusCode).toBe(429);
+      expect(res.body.message).toBe('ThrottlerException: Too Many Requests');
     });
   });
 });

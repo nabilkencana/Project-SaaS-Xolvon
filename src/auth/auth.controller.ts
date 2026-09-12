@@ -8,6 +8,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -27,15 +28,18 @@ import type { JwtPayload } from './interfaces/jwt-payload.interface';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  // 5 req/min per IP — DL-012 (registration abuse matters too).
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   async register(@Body() dto: RegisterDto): Promise<SafeUserDto> {
     return this.authService.register(dto);
   }
 
-  // TODO: Implement rate limiting (e.g. @nestjs/throttler) for brute-force protection
+  // 5 req/min per IP — DL-012 brute-force protection.
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(

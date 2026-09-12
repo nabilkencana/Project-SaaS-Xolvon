@@ -466,6 +466,92 @@ key; perubahan nilai setelah enum final dikunci owner wajib lewat entri
 decision log baru.
 ```
 
+### DL-015 — Kolom "WhatsApp / Proof Reference" tabel admin orders
+
+```text
+Problem:
+PRD §45 mendaftarkan kolom "WhatsApp / Proof Reference if applicable" untuk
+tabel admin orders/activation, tetapi menandainya belum final. Tabel skema
+tidak memiliki kolom whatsapp/proof terdedikasi, dan menambahkan field baru
+di luar kontrak tanpa keputusan owner dilarang (SCHEMA.md §127-128).
+Implementasi T12 butuh keputusan eksplisit untuk kolom ini.
+
+Existing Requirement:
+PRD §45:1266 (kolom belum final); SCHEMA.md §127-128; DL-006 (ratifikasi
+payment_proofs); plan T12.
+
+Options:
+- Menyimpan referensi WhatsApp/proof sebagai kolom dedikasi baru (pada orders
+  atau tabel terpisah) dan mengeksposnya di respons admin.
+- Tidak menyimpan kolom dedikasi; baris payment_proofs adalah referensi proof
+  yang sah, dan kontak WhatsApp admin tercantum terpisah di halaman publik.
+
+Owner:
+Founder/Product
+
+Decision:
+TIDAK ada kolom dedikasi untuk WhatsApp/proof reference di database maupun
+di respons endpoint admin. Referensi proof of payment tetap merujuk pada
+baris payment_proofs (object key per order) yang telah diratifikasi di
+DL-006; kebutuhan tampilan "Proof" di FE membaca dari sana. Kontak WhatsApp
+admin untuk recovery/reset sudah tersedia sebagai teks statis di halaman
+publik (PRD §42) dan bukan data transaksi.
+
+Date:
+2026-09-12
+
+Impact:
+GET /admin/orders (T12) tidak mengembalikan field whatsapp/proof; tidak ada
+perubahan skema untuk kolom ini. Bila owner kelak menghendaki kolom
+dedikasi, wajib lewat entri decision log baru + perubahan skema eksplisit
+(SCHEMA.md §127-128).
+```
+
+---
+
+### DL-016 — Implementasi rate limit auth dengan @nestjs/throttler
+
+```text
+Problem:
+DL-012 mengunci ambang (5 percobaan/menit/IP untuk /auth/login dan
+/auth/register) tetapi belum menetapkan mekanisme implementasinya;
+auth.controller.ts:37 masih TODO saat T17 dimulai.
+
+Existing Requirement:
+DL-012; PRD §104:2718-2753; HANDBOOK_BACKEND.md §5.1:160-233; plan T17.
+
+Options:
+- Implementasi manual (counter in-memory + middleware custom).
+- @nestjs/throttler (ThrottlerModule.forRoot + APP_GUARD + @Throttle per-route).
+
+Owner:
+Backend (default adopted per DL-012, track owner sign-off)
+
+Decision:
+Mekanisme = @nestjs/throttler ^6.5.0 (versi tercatat di package.json; peer
+range paket masih sampai ^11 sehingga .npmrc legacy-peer-deps=true ditambahkan).
+Konfigurasi produksi: global default 100 req/menit/IP per route
+(ThrottlerModule.forRoot, name 'default', ttl 60000), login DAN register
+diperketat ke 5 req/menit/IP via decorator @Throttle di AuthController
+(route metadata meng-override module default di @nestjs/throttler). Semua
+route lain memakai default 100/menit — /api/health dan konten publik GET
+tidak dibatasi agresif. Melebihi ambang → HTTP 429 dengan pesan standar
+throttler ("ThrottlerException: Too Many Requests") tanpa detail internal.
+Pesan kegagalan login tetap generik "Invalid email or password." untuk
+unknown-email maupun wrong-password (anti-enumerasi, dipertahankan + diuji).
+Expiry/refresh eksplisit: sesi kedaluwarsa dihapus (DELETE by id) saat
+refresh() dan dikembalikan 401 generik — diuji unit.
+
+Date:
+2026-09-12
+
+Impact:
+Ambang DL-012 kini aktif secara produksi via APP_GUARD ThrottlerGuard.
+Owner dapat mengganti ambang dengan entri decision log baru; e2e memakai
+override module-options ketat (3/menit) untuk membuktikan pipeline guard
+nyata, dan menguji limit login 5/menit sesuai angka produksi.
+```
+
 ---
 
 ## Konflik dokumen (tercatat + resolusinya)
@@ -498,4 +584,4 @@ diputuskan (tidak ada entri placeholder di log ini):
 - PRD §91.12 — analytics provider pihak ketiga.
 - Plan T7 — enum `type` media project (string terkontrol diadopsi di DL-014; enumerasi final masih terbuka).
 - Plan T9 — governance `external_url` marketplace (validasi minimal https diadopsi di DL-013; approval/allowlist/management masih terbuka).
-- Plan T12 — kolom WhatsApp/proof pada tabel admin.
+- Plan T12 — kolom WhatsApp/proof pada tabel admin (diputuskan di DL-015: tidak ada kolom dedikasi; payment_proofs adalah referensinya).

@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -16,6 +18,7 @@ import { ProjectMediaModule } from './project-media/project-media.module';
 import { ProjectMembersModule } from './project-members/project-members.module';
 import { LessonsModule } from './lessons/lessons.module';
 import { CourseResourcesModule } from './course-resources/course-resources.module';
+import { AdminModule } from './admin/admin.module';
 import { validateEnvironment } from './config/env.validation';
 
 @Module({
@@ -25,6 +28,9 @@ import { validateEnvironment } from './config/env.validation';
       envFilePath: '.env',
       validate: validateEnvironment,
     }),
+    // Global default: 100 req/min per IP per route (generous). Auth routes
+    // tighten to 5/min via @Throttle in AuthController (DL-012).
+    ThrottlerModule.forRoot([{ name: 'default', ttl: 60000, limit: 100 }]),
     DatabaseModule,
     AuthModule,
     EnrollmentsModule,
@@ -39,8 +45,12 @@ import { validateEnvironment } from './config/env.validation';
     ProjectMembersModule,
     LessonsModule,
     CourseResourcesModule,
+    AdminModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}
