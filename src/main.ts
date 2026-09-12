@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
+import { resolveCorsOrigins } from './config/cors';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
@@ -12,15 +13,12 @@ async function bootstrap() {
   // Global route prefix — all routes served under /api/*
   app.setGlobalPrefix('api');
 
-  // CORS — allow requests from the frontend origin
-  const corsOrigins = (
-    configService.get<string>('CORS_ALLOWED_ORIGINS') ??
-    configService.get<string>('FRONTEND_URL') ??
-    ''
-  )
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
+  // CORS — explicit environment whitelist; credentials stay enabled, so
+  // wildcard origins are rejected at bootstrap by resolveCorsOrigins().
+  const corsOrigins = resolveCorsOrigins(
+    configService.get<string>('CORS_ALLOWED_ORIGINS'),
+    configService.get<string>('FRONTEND_URL'),
+  );
   app.enableCors({
     origin: corsOrigins,
     credentials: true,
