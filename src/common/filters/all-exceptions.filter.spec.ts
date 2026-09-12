@@ -14,7 +14,7 @@ describe('AllExceptionsFilter', () => {
       json: jest.fn(),
     };
 
-    const request = { method: 'GET', url: '/api/test' };
+    const request = { method: 'GET', url: '/api/test?token=secret-query-token', path: '/api/test' };
     host = {
       switchToHttp: () =>
         ({
@@ -42,6 +42,12 @@ describe('AllExceptionsFilter', () => {
     expect(body['error']).toBe('BAD_REQUEST');
     expect(body['path']).toBe('/api/test');
     expect(typeof body['timestamp']).toBe('string');
+  });
+
+  it('does not expose query-string secrets in the response or log path', () => {
+    filter.catch(new Error('secret internal detail'), host);
+
+    expect(JSON.stringify(capturedBody())).not.toContain('secret-query-token');
   });
 
   it('preserves structured message arrays from validation errors', () => {

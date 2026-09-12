@@ -594,3 +594,38 @@ diputuskan (tidak ada entri placeholder di log ini):
 - Plan T7 — enum `type` media project (string terkontrol diadopsi di DL-014; enumerasi final masih terbuka).
 - Plan T9 — governance `external_url` marketplace (validasi minimal https diadopsi di DL-013; approval/allowlist/management masih terbuka).
 - Plan T12 — kolom WhatsApp/proof pada tabel admin (diputuskan di DL-015: tidak ada kolom dedikasi; payment_proofs adalah referensinya).
+- T19 — analytics/monitoring provider pihak ketiga (interface `MonitoringPort` tersedia; provider dan credential tetap OPEN sampai keputusan owner).
+
+### DL-017 — Environment, admin bootstrap, and monitoring boundary
+
+```text
+Problem:
+T19 membutuhkan pemisahan local/staging/production, bootstrap admin pertama, dan
+structured logging/error monitoring tanpa memasukkan credential provider yang belum
+dipilih.
+
+Existing Requirement:
+ARCHITECTURE.md §§79-90/165, RULES.md §52, PRD.md §105, T19 plan.
+
+Options:
+- Public admin registration or ad-hoc production seed data.
+- Controlled server-side command using ADMIN_BOOTSTRAP_EMAIL/PASSWORD.
+
+Owner:
+Founder/BE Lead
+
+Decision:
+Use APP_ENV values local/staging/production with separate secret stores. The
+server-side `npm run seed:admin` command hashes through PasswordService, inserts
+role=admin, and is idempotent without a public route or committed credentials.
+Structured monitoring is represented by MonitoringPort only; provider selection and
+credentials remain OPEN DECISION. Rollback is deployment revert plus backup restore
+or a reviewed compensating migration; applied migrations are never edited.
+
+Date:
+2026-09-12
+
+Impact:
+Local dry-run is supported without Cloudflare credentials. Staging/production live
+deployment and provider selection remain T20 work and are not claimed by T19.
+```

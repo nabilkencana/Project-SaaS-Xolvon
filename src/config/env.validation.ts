@@ -24,6 +24,7 @@ const CLOUDFLARE_KEYS = [
 const VALID_DB_DRIVERS = ['sqlite', 'd1'] as const;
 const DEFAULT_DB_DRIVER = 'sqlite';
 const VALID_STORAGE_DRIVERS = ['local-test', 'r2'] as const;
+const VALID_APP_ENVIRONMENTS = ['local', 'staging', 'production'] as const;
 
 /** Minimum accepted length for the JWT signing secret. */
 export const JWT_SECRET_MIN_LENGTH = 32;
@@ -44,6 +45,10 @@ export function validateEnvironment(
   config: Record<string, unknown>,
 ): Record<string, unknown> {
   const problems: string[] = [];
+  const appEnvironment = String(config['APP_ENV'] ?? 'local').trim();
+  if (!(VALID_APP_ENVIRONMENTS as readonly string[]).includes(appEnvironment)) {
+    problems.push(`APP_ENV must be one of: ${VALID_APP_ENVIRONMENTS.join(', ')}`);
+  }
   const storageDriver = String(config['STORAGE_DRIVER'] ?? 'local-test').trim();
   if (!(VALID_STORAGE_DRIVERS as readonly string[]).includes(storageDriver)) {
     problems.push(`STORAGE_DRIVER must be one of: ${VALID_STORAGE_DRIVERS.join(', ')}`);
@@ -51,6 +56,17 @@ export function validateEnvironment(
   if (storageDriver === 'r2') {
     for (const key of ['R2_ENDPOINT', 'R2_BUCKET', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']) {
       if (!isNonBlankString(config[key])) problems.push(`${key} is required when STORAGE_DRIVER=r2`);
+    }
+    if (isNonBlankString(config['R2_ENDPOINT'])) {
+      let endpoint: URL | undefined;
+      try {
+        endpoint = new URL(config['R2_ENDPOINT'].trim());
+      } catch {
+        endpoint = undefined;
+      }
+      if (!endpoint || endpoint.protocol !== 'https:') {
+        problems.push('R2_ENDPOINT must be a valid absolute https URL when STORAGE_DRIVER=r2');
+      }
     }
   }
 
@@ -141,5 +157,6 @@ export function validateEnvironment(
     PORT: coercedPort,
     DB_DRIVER: dbDriver,
     STORAGE_DRIVER: storageDriver,
+    APP_ENV: appEnvironment,
   };
 }

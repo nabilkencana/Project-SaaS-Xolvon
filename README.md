@@ -62,8 +62,12 @@ Salin `.env.example` ke `.env` lalu isi nilainya. Semua variabel divalidasi saat
 | `STORAGE_DRIVER` | Opsional, `local-test` (default) atau `r2`; R2 requires the four `R2_*` variables below |
 | `R2_ENDPOINT` / `R2_BUCKET` | Wajib hanya saat `STORAGE_DRIVER=r2` |
 | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | Wajib hanya saat `STORAGE_DRIVER=r2`; server-only credentials |
+| `APP_ENV` | Opsional, `local` (default), `staging`, atau `production`; values and secrets are environment-specific |
+| `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` | Hanya untuk command terkontrol `npm run seed:admin`; jangan di-set pada proses aplikasi normal |
 
 Development lokal (`DB_DRIVER=sqlite`, default) memakai better-sqlite3 pada `local.db` (di-gitignore) sehingga bootstrap sukses **tanpa kredensial Cloudflare**.
+
+Panduan pemisahan environment, bootstrap admin, observability boundary, dan rollback ada di [`docs/production-operations.md`](docs/production-operations.md). T19 hanya menyediakan dry-run lokal; kredensial/infrastruktur staging dan production belum tersedia dan live deploy dikerjakan di T20.
 
 ## Run tests
 

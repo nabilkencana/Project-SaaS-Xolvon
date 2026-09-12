@@ -16,6 +16,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+    const safePath = request.path ?? request.url.split('?')[0];
 
     let statusCode: number;
     let message: string | string[];
@@ -42,10 +43,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message = 'An unexpected error occurred. Please try again later.';
       error = 'Internal Server Error';
 
-      // Log the real error for server-side debugging
       this.logger.error(
-        `Unhandled exception on ${request.method} ${request.url}`,
-        exception instanceof Error ? exception.stack : String(exception),
+        JSON.stringify({
+          event: 'unhandled_exception',
+          method: request.method,
+          path: safePath,
+          exceptionType: exception instanceof Error ? exception.name : typeof exception,
+        }),
       );
     }
 
@@ -54,7 +58,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message,
       error,
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path: safePath,
     });
   }
 }

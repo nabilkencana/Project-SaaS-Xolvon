@@ -6,6 +6,7 @@ describe('validateEnvironment', () => {
    * app bootstraps locally without any Cloudflare account.
    */
   const sqliteBase: Record<string, string> = {
+    APP_ENV: 'local',
     JWT_SECRET: 'a-sufficiently-long-jwt-secret-32ch',
     FRONTEND_URL: 'https://app.example.com',
     PORT: '3000',
@@ -51,6 +52,23 @@ describe('validateEnvironment', () => {
       expect(() =>
         validateEnvironment({ ...sqliteBase, DB_DRIVER: 'bogus' }),
       ).toThrow('DB_DRIVER');
+    });
+  });
+
+  describe('environment separation', () => {
+    it.each(['local', 'staging', 'production'])('accepts APP_ENV=%s', (APP_ENV) => {
+      expect(() => validateEnvironment({ ...sqliteBase, APP_ENV })).not.toThrow();
+    });
+
+    it('rejects an unknown APP_ENV without exposing values', () => {
+      expect(() => validateEnvironment({ ...sqliteBase, APP_ENV: 'production-secret' })).toThrow(
+        'APP_ENV',
+      );
+      try {
+        validateEnvironment({ ...sqliteBase, APP_ENV: 'production-secret' });
+      } catch (error) {
+        expect((error as Error).message).not.toContain('production-secret');
+      }
     });
   });
 
@@ -164,6 +182,32 @@ describe('validateEnvironment', () => {
       expect(message).toContain('CLOUDFLARE_API_TOKEN');
       expect(message).not.toContain('cf-token-secret-value');
       expect(message).not.toContain('a-sufficiently-long-jwt-secret-32ch');
+    });
+
+    it('rejects an invalid R2 endpoint without exposing its value', () => {
+      const endpoint = 'http://secret-r2-endpoint.example';
+      expect(() =>
+        validateEnvironment({
+          ...sqliteBase,
+          STORAGE_DRIVER: 'r2',
+          R2_ENDPOINT: endpoint,
+          R2_BUCKET: 'bucket',
+          R2_ACCESS_KEY_ID: 'access',
+          R2_SECRET_ACCESS_KEY: 'secret',
+        }),
+      ).toThrow('R2_ENDPOINT');
+      try {
+        validateEnvironment({
+          ...sqliteBase,
+          STORAGE_DRIVER: 'r2',
+          R2_ENDPOINT: endpoint,
+          R2_BUCKET: 'bucket',
+          R2_ACCESS_KEY_ID: 'access',
+          R2_SECRET_ACCESS_KEY: 'secret',
+        });
+      } catch (error) {
+        expect((error as Error).message).not.toContain(endpoint);
+      }
     });
   });
 });
