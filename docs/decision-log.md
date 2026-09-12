@@ -977,3 +977,65 @@ export script, and contract tests; `docs/openapi.json` becomes a generated
 artifact checked for secret-free content by `findSecretLeaks` and the export
 spec. No new HTTP route is added to the running application.
 ```
+
+### DL-029 — Stray root Postman collection relocated into postman/ and removed
+
+```text
+Problem:
+Plan T11 requires the Postman artifacts at `postman/xolvon-backend.postman_collection.json`
+plus `postman/environments/*.postman_environment.json`. Commit `9a6d1d7` (already
+flagged by DL-026 for its stray PDF-pair) additionally placed
+`Xolvon-API.postman_collection.json` in the repo ROOT. That collection covers all
+65 canonical operations (66 requests) but cannot serve the T11 acceptance
+criteria: zero test scripts (so `npx newman run` asserts nothing and cannot be a
+smoke gate), zero saved success/error examples, its second login silently
+OVERWRITES `accessToken` (the admin/user token chain breaks mid-folder), no
+`postman/environments/` files exist (staging/production placeholders per DL-024
+were never created), and the root location contradicts the planned layout and
+the single-source-of-truth rule of DL-026/T14 reconciliation.
+
+Existing Requirement:
+DL-024 (production Postman environments = names + placeholder URLs + blank
+secrets only); DL-025 (conservative cleanup, every deletion logged);
+DL-026 (this is the Postman half of the 9a6d1d7 stray disposition);
+plan T11 (`.omo/plans/xolvon-addendum-hardening-docs.md`).
+
+Options:
+- Keep both collections and hope consumers pick the right one.
+- Move the root file as-is into postman/ (keeps the coverage gap and broken
+  layout).
+- Rebuild the canonical collection at postman/ from docs/openapi.json, port
+  every useful request from the stray file (its token-capture login flow,
+  folder taxonomy, and placeholder bodies are all carried over), then delete
+  the root copy under this ledger entry.
+
+Owner:
+Founder/Backend
+
+Decision:
+Option 3 executed at T11. `postman/xolvon-backend.postman_collection.json`
+(11 folders / 75 requests) now covers ALL 65 openapi operations (checker-verified
+against docs/openapi.json) with
+class-validator-legal placeholder bodies, per-request Newman test scripts,
+saved success + 401/403/404/409/429 examples whose error envelopes match the
+real guard/service throw strings, Bearer token capture into collection
+variables (cookie jar explicitly unused — the API is Bearer-only), and a
+self-contained `10. Newman Smoke` folder. Environments ship under
+`postman/environments/{local,staging,production}.postman_environment.json`;
+staging/production contain placeholder URLs and blank secret variables per
+DL-024, and final staging/production origins remain OPEN per DL-027.
+`npm run test:newman` is the documented local smoke path. The root
+`Xolvon-API.postman_collection.json` is DELETED in the same commit as the
+replacement (this entry is its ledger line). The stale root README §
+"Postman Collection Integration" link is left for the T14 docs-reconciliation
+pass rather than expanded into this test commit.
+
+Date:
+2026-09-12
+
+Impact:
+Single canonical Postman artifact; the stray root file no longer misleads
+consumers; T14 reconciles README prose. No environment secret is committed
+(secret scan recorded in .omo notepad evidence t11). Deletion is reversible:
+the old file remains recoverable from `git show 9a6d1d7:Xolvon-API.postman_collection.json`.
+```
