@@ -20,6 +20,7 @@ import { LessonsModule } from './lessons/lessons.module';
 import { CourseResourcesModule } from './course-resources/course-resources.module';
 import { AdminModule } from './admin/admin.module';
 import { validateEnvironment } from './config/env.validation';
+import { MediaModule } from './media/media.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { validateEnvironment } from './config/env.validation';
     LessonsModule,
     CourseResourcesModule,
     AdminModule,
+    MediaModule,
   ],
   controllers: [AppController],
   providers: [

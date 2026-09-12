@@ -59,6 +59,9 @@ Salin `.env.example` ke `.env` lalu isi nilainya. Semua variabel divalidasi saat
 | `JWT_SECRET` | Wajib, minimal 32 karakter |
 | `FRONTEND_URL` | Wajib, URL absolut `http(s)` yang valid (dipakai untuk CORS origin) |
 | `PORT` | Opsional, integer 1–65535 (default `3000`) |
+| `STORAGE_DRIVER` | Opsional, `local-test` (default) atau `r2`; R2 requires the four `R2_*` variables below |
+| `R2_ENDPOINT` / `R2_BUCKET` | Wajib hanya saat `STORAGE_DRIVER=r2` |
+| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | Wajib hanya saat `STORAGE_DRIVER=r2`; server-only credentials |
 
 Development lokal (`DB_DRIVER=sqlite`, default) memakai better-sqlite3 pada `local.db` (di-gitignore) sehingga bootstrap sukses **tanpa kredensial Cloudflare**.
 

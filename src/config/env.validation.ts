@@ -23,6 +23,7 @@ const CLOUDFLARE_KEYS = [
 /** Supported database drivers (HANDBOOK_BACKEND.md §2 local mode, §8 D1). */
 const VALID_DB_DRIVERS = ['sqlite', 'd1'] as const;
 const DEFAULT_DB_DRIVER = 'sqlite';
+const VALID_STORAGE_DRIVERS = ['local-test', 'r2'] as const;
 
 /** Minimum accepted length for the JWT signing secret. */
 export const JWT_SECRET_MIN_LENGTH = 32;
@@ -43,6 +44,15 @@ export function validateEnvironment(
   config: Record<string, unknown>,
 ): Record<string, unknown> {
   const problems: string[] = [];
+  const storageDriver = String(config['STORAGE_DRIVER'] ?? 'local-test').trim();
+  if (!(VALID_STORAGE_DRIVERS as readonly string[]).includes(storageDriver)) {
+    problems.push(`STORAGE_DRIVER must be one of: ${VALID_STORAGE_DRIVERS.join(', ')}`);
+  }
+  if (storageDriver === 'r2') {
+    for (const key of ['R2_ENDPOINT', 'R2_BUCKET', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']) {
+      if (!isNonBlankString(config[key])) problems.push(`${key} is required when STORAGE_DRIVER=r2`);
+    }
+  }
 
   // DB_DRIVER is optional and defaults to sqlite for local development.
   const rawDriver = config['DB_DRIVER'];
@@ -130,5 +140,6 @@ export function validateEnvironment(
     ...config,
     PORT: coercedPort,
     DB_DRIVER: dbDriver,
+    STORAGE_DRIVER: storageDriver,
   };
 }
