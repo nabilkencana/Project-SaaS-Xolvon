@@ -103,6 +103,68 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
     });
   });
 
+  describe('request integrity for browser mutations', () => {
+    it('t3-allowed-origin: allows configured browser metadata to reach auth', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Origin', 'http://localhost:3001')
+        .send({ courseIds: ['0b9e6b5e-1111-4222-8333-444455556666'] })
+        .expect(401);
+
+      expect(res.body.message).toBe('Missing or invalid authorization token.');
+    });
+
+    it('t3-disallowed-origin: rejects a browser mutation before authentication', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Origin', 'https://evil.example')
+        .send({ courseIds: ['0b9e6b5e-1111-4222-8333-444455556666'] })
+        .expect(403);
+
+      expect(res.body.message).toBe('Request metadata is not allowed.');
+      expectDbUnused();
+    });
+
+    it.each([
+      ['PATCH', '/api/orders/0b9e6b5e-1111-4222-8333-444455556666/verify'],
+      ['DELETE', '/api/lessons/7c9e6679-7425-40de-944b-e07fc1f90ae7'],
+    ])('t3-disallowed-origin-%s: rejects mutation metadata before routing', async (method, path) => {
+      const res = await request(app.getHttpServer())
+        [method.toLowerCase() as 'patch' | 'delete'](path)
+        .set('Origin', 'https://evil.example')
+        .expect(403);
+
+      expect(res.body.message).toBe('Request metadata is not allowed.');
+      expectDbUnused();
+    });
+
+    it('t3-service-client: allows absent browser metadata for bearer service clients', async () => {
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', 'Bearer service-client-token')
+        .send({ courseIds: ['0b9e6b5e-1111-4222-8333-444455556666'] })
+        .expect(401);
+    });
+
+    it('t3-fetch-metadata: rejects cross-site mutations', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Sec-Fetch-Site', 'cross-site')
+        .send({ courseIds: ['0b9e6b5e-1111-4222-8333-444455556666'] })
+        .expect(403);
+
+      expect(res.body.message).toBe('Request metadata is not allowed.');
+      expectDbUnused();
+    });
+
+    it('t3-get-unaffected: leaves GET requests unaffected by disallowed metadata', async () => {
+      await request(app.getHttpServer())
+        .get('/api')
+        .set('Origin', 'https://evil.example')
+        .expect(200);
+    });
+  });
+
   describe('POST /api/auth/register', () => {
     const validPayload = {
       name: 'E2E User',

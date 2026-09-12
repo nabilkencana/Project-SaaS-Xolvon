@@ -13,8 +13,16 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   // CORS — allow requests from the frontend origin
+  const corsOrigins = (
+    configService.get<string>('CORS_ALLOWED_ORIGINS') ??
+    configService.get<string>('FRONTEND_URL') ??
+    ''
+  )
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: configService.get<string>('FRONTEND_URL'),
+    origin: corsOrigins,
     credentials: true,
   });
 

@@ -4,3 +4,9 @@ Implemented local/staging/production environment separation, conditional D1/R2 v
 
 Evidence: evidence-t19-happy.txt and evidence-t19-failure.txt.
 Production credentials and infrastructure were unavailable. No staging or production deploy/QA is claimed; live deployment remains T20.
+
+T3 DoneClaim
+
+Implemented additive request-integrity guarding for browser mutations. POST, PATCH, and DELETE requests reject disallowed Origin/Referer metadata and `Sec-Fetch-Site: cross-site` with 403. Requests without browser metadata remain compatible with bearer-authenticated service clients, and GET requests remain unaffected. No cookie CSRF endpoints, auth migration, or source schema changes were made.
+
+Evidence: t3-happy.txt and t3-failure.txt. Learning: learning-t3.md.

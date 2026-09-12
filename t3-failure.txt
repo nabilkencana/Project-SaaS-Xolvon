@@ -1,0 +1,7 @@
+T3 request-integrity failure evidence
+Status: PASS (negative controls)
+
+- Disallowed Origin mutation is rejected with HTTP 403 before authentication or data access.
+- Cross-site Fetch Metadata mutation is rejected with HTTP 403 before routing logic.
+- Disallowed Referer mutation is covered by the unit guard suite and throws ForbiddenException.
+- DELETE and PATCH mutation routes are covered by e2e negative controls.

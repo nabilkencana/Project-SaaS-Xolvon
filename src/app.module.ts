@@ -23,6 +23,7 @@ import { validateEnvironment } from './config/env.validation';
 import { MediaModule } from './media/media.module';
 import { ProgressModule } from './progress/progress.module';
 import { SearchModule } from './search/search.module';
+import { RequestIntegrityGuard } from './common/guards/request-integrity.guard';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { SearchModule } from './search/search.module';
   providers: [
     AppService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: RequestIntegrityGuard },
   ],
 })
 export class AppModule {}
