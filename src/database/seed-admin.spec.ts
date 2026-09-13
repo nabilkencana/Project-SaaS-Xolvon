@@ -30,19 +30,24 @@ interface SeedRun {
   output: string;
 }
 
-async function runSeed(overrides: NodeJS.ProcessEnv): Promise<SeedRun> {
+async function runSeed(
+  overrides: NodeJS.ProcessEnv,
+  opts?: { cwd?: string },
+): Promise<SeedRun> {
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const key of [
     'CLOUDFLARE_API_TOKEN',
     'CLOUDFLARE_ACCOUNT_ID',
     'CLOUDFLARE_D1_DATABASE_ID',
     'ADMIN_BOOTSTRAP_ALLOW_REMOTE',
+    'ADMIN_BOOTSTRAP_EMAIL',
+    'ADMIN_BOOTSTRAP_PASSWORD',
   ]) {
     delete env[key];
   }
   Object.assign(env, overrides);
 
-  const cwd = mkdtempSync(join(tmpdir(), 'qa-t16-seed-'));
+  const cwd = opts?.cwd ?? mkdtempSync(join(tmpdir(), 'qa-t16-seed-'));
   return new Promise((done) => {
     execFile(
       TS_NODE,
@@ -125,4 +130,26 @@ describe('seed-guard (pure)', () => {
     expect(isSeedDriverAllowed('d1', false)).toBe(false);
     expect(isSeedDriverAllowed('d1', true)).toBe(true);
   });
+});
+
+describe('seed:admin error visibility (BUG-seed-opaque)', () => {
+  it(
+    'surfaces the real failure message instead of the opaque catch-all',
+    async () => {
+      // cwd = repo root so env validation passes via the real .env, and the
+      // standard sqlite shell override keeps the preflight satisfied;
+      // ADMIN credentials are deliberately missing, so main() fails fast on
+      // its own precondition — long before any database is opened. The old
+      // catch(() => {}) printed only "Check controlled command
+      // configuration." and cost the whole T1 debug cycle.
+      const run = await runSeed(
+        { DB_DRIVER: 'sqlite', STORAGE_DRIVER: 'local-test' },
+        { cwd: REPO_ROOT },
+      );
+
+      expect(run.code).toBe(1);
+      expect(run.output).toContain('ADMIN_BOOTSTRAP_EMAIL');
+    },
+    180_000,
+  );
 });
