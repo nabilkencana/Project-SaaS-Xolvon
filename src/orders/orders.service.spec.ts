@@ -191,8 +191,10 @@ describe('OrdersService', () => {
         status: 'pending',
       });
 
+      // Fixture updated for BUG-T9-01: the old key 'proofs/ord-1.jpg' encoded
+      // the buggy acceptance of foreign prefixes; allowed-prefix keys only.
       const result = await service.submitPaymentProof('user-1', 'ord-1', {
-        objectKey: 'proofs/ord-1.jpg',
+        objectKey: 'private/courses/ord-1.jpg',
       });
 
       expect(result.message).toBe('Bukti pembayaran berhasil diunggah.');
@@ -206,6 +208,77 @@ describe('OrdersService', () => {
       expect(
         touchedSqls.some((sql) => sql.includes('UPDATE orders')),
       ).toBe(false);
+    });
+
+    // ---------------------------------------------------------------------------
+    // BUG-T9-01 (reproduction): submitPaymentProof stored ANY client-supplied
+    // objectKey. QA evidence (task-9-critical-local.md L3-L6, EXPLOIT-TERBUKTI
+    // on both targets): '../etc/passwd', percent-encoded traversal, and keys
+    // from foreign prefixes were all accepted with 201. These legs must 400.
+    // ---------------------------------------------------------------------------
+    const pendingOwnOrder = () =>
+      mockDb.queryOne.mockResolvedValueOnce({
+        id: 'ord-1',
+        user_id: 'user-1',
+        status: 'pending',
+      });
+
+    it('should reject path-traversal objectKey "../etc/passwd" with 400 (BUG-T9-01)', async () => {
+      pendingOwnOrder();
+
+      await expect(
+        service.submitPaymentProof('user-1', 'ord-1', {
+          objectKey: '../etc/passwd',
+        }),
+      ).rejects.toThrow('objectKey bukti pembayaran tidak valid.');
+      expect(mockDb.execute).not.toHaveBeenCalled();
+    });
+
+    it('should reject percent-encoded traversal objectKey with 400 (BUG-T9-01)', async () => {
+      pendingOwnOrder();
+
+      await expect(
+        service.submitPaymentProof('user-1', 'ord-1', {
+          objectKey: 'private/courses/%2e%2e/%2e%2e/etc/passwd',
+        }),
+      ).rejects.toThrow('objectKey bukti pembayaran tidak valid.');
+      expect(mockDb.execute).not.toHaveBeenCalled();
+    });
+
+    it('should reject backslash objectKey with 400 (BUG-T9-01)', async () => {
+      pendingOwnOrder();
+
+      await expect(
+        service.submitPaymentProof('user-1', 'ord-1', {
+          objectKey: 'private\\courses\\x.png',
+        }),
+      ).rejects.toThrow('objectKey bukti pembayaran tidak valid.');
+      expect(mockDb.execute).not.toHaveBeenCalled();
+    });
+
+    it('should reject objectKey outside MEDIA_PREFIXES allowlist with 400 (BUG-T9-01)', async () => {
+      pendingOwnOrder();
+
+      await expect(
+        service.submitPaymentProof('user-1', 'ord-1', {
+          objectKey: 'payment-proofs/some-key.jpg',
+        }),
+      ).rejects.toThrow('objectKey bukti pembayaran tidak valid.');
+      expect(mockDb.execute).not.toHaveBeenCalled();
+    });
+
+    it('should still accept an allowed-prefix key even when it may reference another user upload (documented residual, not fixed here)', async () => {
+      // Residual gap: cross-user references within an allowed prefix cannot be
+      // closed without an attribution column + student upload endpoint
+      // (product decision — see T16 report). This test pins that behaviour.
+      pendingOwnOrder();
+
+      const result = await service.submitPaymentProof('user-1', 'ord-1', {
+        objectKey: 'private/courses/qa-t9-proof-B-1789276695.png',
+      });
+
+      expect(result.proofId).toBeDefined();
+      expect(mockDb.execute).toHaveBeenCalledTimes(1);
     });
   });
 
