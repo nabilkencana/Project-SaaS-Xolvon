@@ -2405,6 +2405,57 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
       expectDbUnused();
     });
 
+    // Reproduction for BUG-audit-media (High, handbook §7 "semua aksi admin
+    // tercatat"): F-T8-02/03 + T13 confirmed POST /admin/media/upload-url and
+    // /admin/media/confirm minted zero admin_audit_logs rows — every other
+    // admin mutation (courses, orders, enrollments…) records one. Audit rows
+    // for these two routes must be written with the acting admin as actor.
+    it('writes admin_audit_logs rows for upload-url mint and confirm (BUG-audit-media)', async () => {
+      const token = await adminToken();
+
+      const mint = await request(app.getHttpServer())
+        .post('/api/admin/media/upload-url')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          prefix: 'private/courses',
+          contentType: 'image/png',
+          size: 2048,
+          filename: 'qa-t16.png',
+        })
+        .expect(201);
+      const key = mint.body.key as string;
+      expect(key).toMatch(/^private\/courses\/[0-9a-f-]+\.png$/);
+
+      let audit = dbExecute.mock.calls.filter(([sql]) =>
+        (sql as string).includes('admin_audit_logs'),
+      );
+      expect(audit).toHaveLength(1);
+      expect(audit[0][1]).toEqual([
+        expect.any(String),
+        'admin-uuid-1',
+        'create',
+        'media-upload',
+        key,
+        JSON.stringify({ key }),
+        expect.any(String),
+      ]);
+
+      const confirm = await request(app.getHttpServer())
+        .post('/api/admin/media/confirm')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ key })
+        .expect(201);
+      expect(confirm.body).toEqual({ key, confirmed: true });
+
+      audit = dbExecute.mock.calls.filter(([sql]) =>
+        (sql as string).includes('admin_audit_logs'),
+      );
+      expect(audit).toHaveLength(2);
+      expect(audit[1][1][2]).toBe('update');
+      expect(audit[1][1][3]).toBe('media-upload');
+      expect(audit[1][1][4]).toBe(key);
+    });
+
     it('returns safe errors without secrets or stack traces for unknown failures', async () => {
       dbQueryAll.mockRejectedValueOnce(
         new Error('sqlite secret=top-secret connection stack should stay server-side'),
