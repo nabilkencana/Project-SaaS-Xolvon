@@ -10,6 +10,7 @@ import {
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CreateUploadUrlDto, ConfirmMediaDto } from './dto/media.dto';
 import { MediaService } from './media.service';
 import { SIGNED_THROTTLE } from '../config/throttle.config';
@@ -33,7 +34,7 @@ export class MediaController {
       },
     },
   })
-  @Throttle(SIGNED_THROTTLE) @Post('upload-url') createUploadUrl(@Body() dto: CreateUploadUrlDto) { return this.mediaService.createUploadUrl(dto); }
+  @Throttle(SIGNED_THROTTLE) @Post('upload-url') createUploadUrl(@Body() dto: CreateUploadUrlDto, @CurrentUser('sub') adminId: string) { return this.mediaService.createUploadUrl(dto, adminId); }
   @ApiOperation({ summary: 'Confirm a completed upload (admin)' })
   @ApiOkResponse({
     schema: {
@@ -41,7 +42,7 @@ export class MediaController {
       properties: { key: { type: 'string' }, confirmed: { type: 'boolean' } },
     },
   })
-  @Post('confirm') confirm(@Body() dto: ConfirmMediaDto) { return this.mediaService.confirm(dto.key); }
+  @Post('confirm') confirm(@Body() dto: ConfirmMediaDto, @CurrentUser('sub') adminId: string) { return this.mediaService.confirm(dto.key, adminId); }
   @ApiOperation({ summary: 'Create a presigned read URL for private media (admin)' })
   @ApiOkResponse({
     schema: {
