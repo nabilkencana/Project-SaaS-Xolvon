@@ -2224,9 +2224,19 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
       expect(JSON.stringify(res.body)).not.toContain('SELECT');
     });
 
-    it('applies the tight module override (limit 3) to routes without @Throttle: 3 rapid refreshes get 401, the 4th gets 429', async () => {
+    // Reproduction for BUG-throttle-refresh-logout (Medium). The previous
+    // test in this slot asserted that refresh INHERITED the tight module
+    // override as a route WITHOUT @Throttle — that encoded the bug: only
+    // register/login carry 5/min decorators (auth.controller.ts:48,59), so
+    // refresh and logout ran at the global 100/min (deployed proof:
+    // x-ratelimit-limit: 100 on both routes, task-6b-throttle-local.md
+    // §DEPLOYED probe). Refresh token brute-force and logout session-probing
+    // therefore had 20x the budget of login. Desired behavior: refresh and
+    // logout carry their own 5/min route decorators, so the module override
+    // (3/min) must NOT bind them — five permitted, sixth is a 429.
+    it('refresh carries its own 5/min route limit despite the 3/min module override (BUG-throttle-refresh-logout)', async () => {
       const server = throttleApp.getHttpServer();
-      for (let i = 0; i < tightLimit; i++) {
+      for (let i = 0; i < 5; i++) {
         await request(server)
           .post('/api/auth/refresh')
           .send({ refreshToken: 'not-a-valid-token' })
@@ -2235,6 +2245,24 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
 
       const res = await request(server)
         .post('/api/auth/refresh')
+        .send({ refreshToken: 'not-a-valid-token' })
+        .expect(429);
+
+      expect(res.body.statusCode).toBe(429);
+      expect(res.body.message).toBe('ThrottlerException: Too Many Requests');
+    });
+
+    it('logout carries its own 5/min route limit despite the 3/min module override (BUG-throttle-refresh-logout)', async () => {
+      const server = throttleApp.getHttpServer();
+      for (let i = 0; i < 5; i++) {
+        await request(server)
+          .post('/api/auth/logout')
+          .send({ refreshToken: 'not-a-valid-token' })
+          .expect(200);
+      }
+
+      const res = await request(server)
+        .post('/api/auth/logout')
         .send({ refreshToken: 'not-a-valid-token' })
         .expect(429);
 
