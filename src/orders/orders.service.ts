@@ -12,6 +12,7 @@ import type { OrderRow } from './interfaces/order.interface';
 import type { OrderItemRow } from './interfaces/order-item.interface';
 import type { CreateOrderDto } from './dto/create-order.dto';
 import type { SubmitPaymentProofDto } from './dto/submit-payment-proof.dto';
+import { MEDIA_PREFIXES } from '../media/dto/media.dto';
 import {
   OrderActivationResponseDto,
   OrderResponseDto,
@@ -184,6 +185,14 @@ export class OrdersService {
         'Bukti pembayaran hanya dapat diunggah untuk order yang berstatus pending.',
       );
     }
+
+    // BUG-T9-01 remediation: the object key is client-supplied but is later
+    // rendered by admins via POST /admin/media/read-url, so it must never
+    // escape the storage-prefix scheme (traversal, encoded traversal,
+    // backslashes, or foreign prefixes). Residual (open product decision):
+    // referencing another user's key WITHIN an allowed prefix cannot be
+    // closed without an attribution column + a student upload endpoint.
+    this.assertValidProofObjectKey(dto.objectKey);
 
     const proofId = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -359,5 +368,40 @@ export class OrdersService {
       { ...order, status: 'cancelled', updated_at: now },
       items,
     );
+  }
+
+  /**
+   * Server-side validation of a client-supplied payment-proof object key
+   * (BUG-T9-01). Mirrors MediaService.isServerKey (media.service.ts:29-33)
+   * and additionally rejects percent-encoded traversal: the key is decoded
+   * iteratively, every intermediate form is checked for traversal, and the
+   * fully-decoded form must sit under an allowed MEDIA_PREFIXES entry.
+   */
+  private assertValidProofObjectKey(objectKey: string): void {
+    const forms = [objectKey];
+    let current = objectKey;
+    for (let depth = 0; depth < 2; depth++) {
+      try {
+        const decoded = decodeURIComponent(current);
+        if (decoded === current) break;
+        current = decoded;
+        forms.push(current);
+      } catch {
+        break;
+      }
+    }
+
+    const escaped = forms.some(
+      (form) => form.includes('..') || form.includes('\\'),
+    );
+    const underAllowedPrefix = MEDIA_PREFIXES.some((prefix) =>
+      current.startsWith(`${prefix}/`),
+    );
+
+    if (escaped || !underAllowedPrefix) {
+      throw new BadRequestException(
+        'objectKey bukti pembayaran tidak valid.',
+      );
+    }
   }
 }
