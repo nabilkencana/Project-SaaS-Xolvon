@@ -76,7 +76,10 @@ export class AuthController {
     return this.authService.login(dto, ipAddress, userAgent);
   }
 
+  // 5 req/min per IP — BUG-throttle-refresh-logout: refresh previously ran at
+  // the global 100/min, giving token-guessing 20x the login budget.
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Exchange a refresh token for a new access token' })
   @ApiOkResponse({
     schema: {
@@ -93,7 +96,10 @@ export class AuthController {
     return this.authService.refresh(dto.refreshToken);
   }
 
+  // 5 req/min per IP — BUG-throttle-refresh-logout: logout probes sessions by
+  // hashed refresh token; same budget class as refresh.
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Revoke the session behind a refresh token' })
   @ApiOkResponse({ schema: MESSAGE_SCHEMA })
   @Post('logout')
