@@ -2,6 +2,11 @@ import { execFile } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import {
+  isSeedDriverAllowed,
+  parseEnvFileValue,
+  resolveSeedDbDriver,
+} from './seed-guard';
 
 /**
  * Reproduction for BUG-seed-driver (High, task-1-preflight.txt ROOT-CAUSE):
@@ -82,4 +87,42 @@ describe('seed:admin driver guard (BUG-seed-driver)', () => {
     },
     180_000,
   );
+
+  it(
+    'ADMIN_BOOTSTRAP_ALLOW_REMOTE=1 passes the guard for d1 (bootstrap proceeds past the refusal)',
+    async () => {
+      const run = await runSeed({
+        DB_DRIVER: 'd1',
+        ADMIN_BOOTSTRAP_ALLOW_REMOTE: '1',
+        ADMIN_BOOTSTRAP_EMAIL: 'qa-t16@example.test',
+        ADMIN_BOOTSTRAP_PASSWORD: 'irrelevant-unused',
+        JWT_SECRET: '0123456789012345678901234567890123456789',
+        FRONTEND_URL: 'http://localhost:3001',
+      });
+
+      // Guard must NOT refuse; the run then dies at Cloudflare-credential
+      // validation (names only, no values, no network) — proving the refusal
+      // was the only thing blocking d1 for a non-opted-in operator.
+      expect(run.output).not.toContain('refuses DB_DRIVER');
+      expect(run.code).toBe(1);
+    },
+    180_000,
+  );
+});
+
+describe('seed-guard (pure)', () => {
+  it('resolves DB_DRIVER like ConfigModule+DatabaseModule: process.env wins over .env, default sqlite', () => {
+    expect(resolveSeedDbDriver({ DB_DRIVER: 'd1' }, 'DB_DRIVER=sqlite')).toBe('d1');
+    expect(resolveSeedDbDriver({}, 'DB_DRIVER=d1\n')).toBe('d1');
+    expect(resolveSeedDbDriver({ DB_DRIVER: 'sqlite' }, 'DB_DRIVER=d1')).toBe('sqlite');
+    expect(resolveSeedDbDriver({}, undefined)).toBe('sqlite');
+    expect(resolveSeedDbDriver({}, '# comment\nDB_DRIVER = d1 ')).toBe('d1');
+    expect(parseEnvFileValue('A=1\nDB_DRIVER=x\nDB_DRIVER="d1"\n', 'DB_DRIVER')).toBe('d1');
+  });
+
+  it('allows only sqlite, or any driver under explicit remote opt-in', () => {
+    expect(isSeedDriverAllowed('sqlite', false)).toBe(true);
+    expect(isSeedDriverAllowed('d1', false)).toBe(false);
+    expect(isSeedDriverAllowed('d1', true)).toBe(true);
+  });
 });

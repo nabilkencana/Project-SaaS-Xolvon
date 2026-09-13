@@ -1,3 +1,4 @@
+import './seed-admin-preflight';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../app.module';
 import { PasswordService } from '../auth/password.service';
