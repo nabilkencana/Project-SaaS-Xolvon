@@ -115,16 +115,20 @@ function requireEnv(name) {
 }
 
 /**
- * Deterministic E.164-ish placeholder phone from the email local-part
- * (RegisterDto.phone is REQUIRED: /^[+]?[0-9\s\-()]{8,20}$/). Digits of the
- * local-part (QA emails embed a unixts), padded with '7' to 9 digits, capped
- * at 12, prefixed '+62'. Same email ⇒ same phone, every time.
+ * Deterministic E.164-ish placeholder phone from the FULL email local-part
+ * (RegisterDto.phone is REQUIRED: /^[+]?[0-9\s\-()]{8,20}$/, and
+ * AuthService.register pre-checks `WHERE email = ? OR phone = ?` — any
+ * derivation ignoring part of the local-part collides between scenario
+ * emails sharing a unixts, poisoning the second race with a phone-path 409).
+ * Hashes the ENTIRE local-part (32-bit djb2 variant) → 10 decimal digits
+ * under '+62'. Same email ⇒ same phone, every time; distinct local-parts
+ * practically never collide.
  */
 function derivePhone(email) {
   const local = email.split('@')[0] ?? '';
-  const digits = local.replace(/\D/g, '');
-  const padded = digits.length >= 9 ? digits.slice(0, 12) : (digits + '7'.repeat(9)).slice(0, 9);
-  return `+62${padded}`;
+  let h = 5381;
+  for (let i = 0; i < local.length; i++) h = ((h * 33) ^ local.charCodeAt(i)) >>> 0;
+  return `+62${String(h % 1e10).padStart(10, '0')}`;
 }
 
 /* ------------------------------------------------------------------- HTTP */

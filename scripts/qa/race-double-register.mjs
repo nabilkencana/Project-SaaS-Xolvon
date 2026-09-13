@@ -102,21 +102,26 @@ function requireEnv(name) {
 }
 
 /**
- * Deterministic E.164-ish placeholder phone derived from the email
+ * Deterministic E.164-ish placeholder phone derived from the FULL email
  * local-part, used only when QA_RACE_PHONE is unset. RegisterDto marks
  * `phone` REQUIRED with @Matches(/^[+]?[0-9\s\-()]{8,20}$/), so the register
- * body cannot omit it. Derivation: take the digits of the local-part (QA
- * convention embeds a unixts so digits exist), right-pad with '7' to at
- * least 9 digits, cap at 12, and prefix '+62'. Both concurrent requests use
- * the SAME derived phone (same email ⇒ same derivation), so the race target —
- * one user row per email — is unaffected. Fully deterministic: same email
- * always yields the same phone.
+ * body cannot omit it, and AuthService.register pre-checks
+ * `WHERE email = ? OR phone = ?` — so any derivation that ignores part of
+ * the local-part COLLIDES between scenario emails sharing a unixts (the
+ * original digits-only version made qa-race-reg-l-<ts> and qa-race-act-l-<ts>
+ * derive the same phone, poisoning the second race with a phone-path 409).
+ * Derivation therefore hashes the ENTIRE local-part (32-bit djb2 variant)
+ * and renders the hash as 10 decimal digits under '+62'. Both concurrent
+ * requests use the SAME derived phone (same email ⇒ same hash), so the race
+ * target — one user row per email — is unaffected. Fully deterministic: same
+ * email always yields the same phone; distinct local-parts practically never
+ * collide (birthday bound over 10^10 for a handful of QA emails is ~0).
  */
 function derivePhone(email) {
   const local = email.split('@')[0] ?? '';
-  const digits = local.replace(/\D/g, '');
-  const padded = digits.length >= 9 ? digits.slice(0, 12) : (digits + '7'.repeat(9)).slice(0, 9);
-  return `+62${padded}`;
+  let h = 5381;
+  for (let i = 0; i < local.length; i++) h = ((h * 33) ^ local.charCodeAt(i)) >>> 0;
+  return `+62${String(h % 1e10).padStart(10, '0')}`;
 }
 
 /**
