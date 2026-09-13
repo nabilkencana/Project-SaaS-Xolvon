@@ -27,8 +27,11 @@ async function main(): Promise<void> {
 }
 
 if (process.argv[1]?.replace(/\\/g, '/').endsWith('/seed-admin.ts')) {
-  void main().catch(() => {
-    process.stderr.write('Admin bootstrap failed. Check controlled command configuration.\n');
+  // BUG-seed-opaque: surface the underlying failure message (Nest/D1 errors
+  // are name-only for secrets; the message itself never contains values).
+  void main().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`Admin bootstrap failed: ${message}\n`);
     process.exitCode = 1;
   });
 }
