@@ -202,3 +202,88 @@ metrics + the §5.1/§5.2 smoke checks per release.
 - [ ] Admin seed/verify/activate/revoke happy path on clean accounts
 - [ ] Evidence captured with zero secret values
 - [ ] `qa-results.md` / runbook updated with real status (or an honest BLOCKED)
+
+## 10. Origin server behind the tunnel — supervisor & architecture note
+
+**How the live endpoint actually runs today (no misrepresentation):** the
+`https://xolvon.canadev.my.id` endpoint is served by a `cloudflared` tunnel
+(`~/.cloudflared/config.yml`, hostname `xolvon.canadev.my.id` → service
+`http://127.0.0.1:3333`) that reaches a locally-running **Node/Express
+NestJS** process (`node dist/main`) — NOT a Cloudflare Worker.
+
+**This is an architecture mismatch that must be re-decided (see §1 above and
+decision-log K-06/DL-042 context).** The backend is by design a Node service
+that talks to D1 over its REST API (`DB_DRIVER=d1`), which contradicts any
+plan to deploy `dist/main` as a Workers runtime (vinext path is explicitly
+for the frontend). Running the "production" origin as a local process on a
+developer machine behind a tunnel is fragile:
+- it is machine-dependent (must stay powered on + `cloudflared` up);
+- it is not supervised (until the supervisor below is installed) and died
+  before, leaving the public endpoint returning 502 with no process on :3333;
+- it reads the `xolvon-staging` D1 (`.env` / `CLOUDFLARE_D1_DATABASE_ID`),
+  so what is reachable at `xolvon.canadev.my.id` reflects staging data, not
+  production. A production origin must bind the `xolvon-production` D1 id
+  (`99bf2fc5-…`) and its own secret store.
+
+**Do NOT treat the local-tunnel origin as a production-ready deployment.**
+Before production sign-off, choose one of:
+
+| Option | Notes |
+|---|---|
+| Run the Node service on a real Linux server as a `systemd` unit (`Restart=always`, `WantedBy=multi-user.target`) behind a stable tunnel | Removes machine dependency; supervised; survives reboot; server-class. |
+| `pm2` (`pm2 startup` + `pm2 save`) if process management is already used elsewhere in the org | Node-native, easy restart/logs. |
+| Docker with `restart: unless-stopped` | Good if containerization is adopted. |
+| (Reconsider) Deploy as Cloudflare Worker | Only if `dist/main` can run in the Workers runtime — per §1 this is NOT currently supported; requires re-architecting storage D1 access to `env.DB` binding (see HANDBOOK_BACKEND.md §8). |
+
+**macOS host (current case):** if the owner decides to keep the local dev
+machine as the origin, the appropriate supervisor is a **launchd agent**
+(`~/Library/LaunchAgents/com.xolvon.origin.plist`), which survives logout and
+restarts on crash. Sample unit + install/verify steps are below. Note this
+still leaves the machine-dependency caveat.
+
+```
+# ~/Library/LaunchAgents/com.xolvon.origin.plist  (sample; secret-free)
+# <key>ProgramArguments</key>
+# <array>
+#   <string>/usr/bin/env</string><string>bash</string><string>-lc</string>
+#   <string>cd /Users/nabilkencana/Downloads/Documents/XOLVON/PROJECT/Project-SaaS-Xolvon && PORT=3333 node dist/main</string>
+# </array>
+# <key>RunAtLoad</key><true/>
+# <key>KeepAlive</key><true/>
+# <key>StandardOutPath</key><string>/tmp/xolvon-origin.log</string>
+# <key>StandardErrorPath</key><string>/tmp/xolvon-origin.err</string>
+```
+Install/verify:
+```
+launchctl bootout gui/$(id -u)/com.xolvon.origin 2>/dev/null
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.xolvon.origin.plist
+launchctl print gui/$(id -u)/com.xolvon.origin   # confirm state
+# kill -9 <pid>  -> KeepAlive respawns it; verify with launchctl print + curl :3333
+```
+
+**How to check/restart/log the origin (whichever supervisor):**
+- Status: `lsof -nP -iTCP:3333 -sTCP:LISTEN` (process alive), plus
+  `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3333/api/home`.
+- Restart manually: `kill <pid>` (supervisor respawns) or stop/start the unit.
+- Logs: launchd → `StandardOutPath`/`StandardErrorPath`; pm2 → `pm2 logs`;
+  systemd → `journalctl -u <unit>`; Docker → `docker logs <name>`.
+
+## 11. Mandatory manual D1 write procedure (see decision-log DL-041)
+
+Any manual WRITE to Cloudflare D1 (credential rotation, backfills, schema
+edits) MUST be routed through `scripts/qa/d1-write.mjs`:
+
+```
+node scripts/qa/d1-write.mjs --db xolvon-staging [--env production] --file <sql.sql> --label "describe"
+```
+
+- SQL MUST come from a file (`--file`) — never `--command`, so hashes/secrets
+  never appear in argv/process list/logs.
+- The wrapper verifies `meta.rows_written` (or per-statement "Rows written")
+  and REFUSES (exit 5) when 0 rows were actually modified. Do NOT rely on
+  `wrangler` exit code 0 or on `meta.changes`: `meta.changes` is additive and
+  returns 1 even for a 0-row UPDATE (verified live).
+- Example (admin session purge before a rotation), file `purge.sql`:
+  `DELETE FROM sessions WHERE user_id=(SELECT id FROM users WHERE email='admin@xolvon.com');`
+  then run it through the wrapper. If the wrapper reports 0 rows, investigate,
+  never assume success.

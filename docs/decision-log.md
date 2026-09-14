@@ -1519,3 +1519,111 @@ secara operasional.
 
 
 
+
+---
+
+```
+ID: DL-041
+Title: Root Cause & Lesson-Learned — Why the Password UPDATE Never Took Effect (and the meta.changes safeguard)
+Scope: Operations (manual D1 writes), security (credentials)
+Status: Documented — mechanism partly unrecoverable; mitigation enforced
+
+Backreference: DL-038 (original rotation), INC-2026-09-14.
+
+Problem:
+The 2026-09-14 credential rotation was re-applied after an independent audit
+(production-readiness-report §5.1) found the prior rotation had not taken
+effect: admin users.password_hash on BOTH xolvon-staging and xolvon-production
+still verified the pre-rotation leaked password.
+
+Evidence (unchanged_row):
+Before re-rotation, `users` admin row in both environments had
+`updated_at == created_at == 2026-09-11` (row created at bootstrap, prefix
+`$argon2i`). No UPDATE had ever modified the admin row in either environment.
+
+Mechanism analysis (evidence-based, no speculation):
+1. Seed auto-overwrite — RULED OUT. `bootstrapAdmin` is idempotent (returns
+   'already_exists' and never rewrites password when the admin exists) and is
+   not invoked anywhere in `src/main.ts` (application startup) or deploys.
+2. Database-name/ID resolution — RULED OUT as the sole cause. `wrangler.jsonc`
+   maps `xolvon-staging` -> c3b8fc08 and `xolvon-production` -> 99bf2fc5
+   correctly; `wrangler d1 list` confirms only these two xolvon DBs exist.
+   NOTE (structural gap): `.env` carries a SINGLE D1 id (== staging), so any
+   rotation that keyed off `.env`'s CLOUDFLARE_D1_DATABASE_ID structurally
+   cannot have targeted production (99bf2fc5).
+3. Shell `$`-escaping of the Argon2 hash — RULED OUT as the mechanism behind
+   the unchanged row: a corrupted hash string would STILL execute an UPDATE
+   and flip `updated_at`. Since `updated_at` never changed, no UPDATE reached
+   the admin row at all.
+4. meta.changes not checked + 0-rows-matched — CONSISTENT and most probable.
+   `wrangler d1 execute --command "UPDATE ..."` exits 0 even when the WHERE
+   matches 0 rows (reproduced live: an UPDATE matching no row returns
+   success:true, `meta.changes:1`, `rows_written:0`). Operators relying on
+   exit code / `changes` can believe a write succeeded when 0 rows changed.
+
+Conclusion:
+The exact command string of the failed rotation could NOT be reconstructed
+(no archived session log, no shell history, no captured command in .omo). It
+is stated honestly as UNRECONSTRUCTABLE. However the ONLY mechanisms
+consistent with an unchanged admin row on both environments are: a WHERE that
+matched 0 rows (case/typo/whitespace), a write targeting a store without the
+admin row, or the write never executing. All share one failure pattern:
+"success reported without an effective write".
+
+Mitigation (enforced):
+1. `scripts/qa/d1-write.mjs` — SAFE wrapper for any manual D1 WRITE. Takes
+   SQL from a FILE (never `--command`, so hashes/secrets never hit argv/log),
+   and REFUSES (exit 5) when `meta.rows_written` / per-statement "Rows
+   written" is 0. Verified: 0-row UPDATE -> exit 5; 1-row UPDATE -> exit 0.
+2. WARNING: D1 `meta.changes` is NOT a reliable "rows changed" counter — it is
+   additive and returns 1 even for a 0-row UPDATE. Always rely on
+   `meta.rows_written` (or per-statement "Rows written"). Documented here and
+   in `docs/deployment-runbook.md` §9.
+3. Procedure: ALL manual write operations to D1 (credentials, backfills,
+   schema edits) MUST be routed through `scripts/qa/d1-write.mjs` (or an
+   equivalent that enforces rows_written>0 and file-based SQL). Never rely on
+   exit code alone.
+
+Date: 2026-09-14
+
+Impact:
+Prevents the recurring failure class ("rotation reported successful but never
+wrote") from repeating in any future credential/schema manual operation.
+
+---
+
+```
+ID: DL-042
+Title: [OPEN DECISION] Git History Rewrite for the Leaked Password Literal
+Scope: Repository governance, security
+Status: MENUNGGU KEPUTUSAN PEMILIK (not decided)
+
+Context:
+The pre-rotation password literal existed in git history. It has been scrubbed
+from the working tree (commit `0dc0bac`) but remains in old commits. Affected
+commits (contains the literal, via `git log --all -S`):
+- `9a6d1d7`  — original commit where the literal first appeared (origin)
+- `f93b1ee`  — re-quoted the literal after it leaked (readd)
+(commit `0dc0bac` REDACTED it — that is the scrub, not a leak commit.)
+
+This is a DECISION for the owner; nothing here has been executed (no
+filter-repo / BFG / force-push in this session).
+
+Trade-off:
+
+| Opsi | Konsekuensi |
+|---|---|
+| Tidak rewrite history | Password lama tetap ada di commit lama, tapi sudah tidak valid (menunggu rotasi diverifikasi oleh pemilik). Risiko rendah jika repo PRIVATE dan akses terbatas ke tim terpercaya. Tidak ada risiko merusak clone tim / PR / CI. |
+| `git filter-repo` / BFG hapus literal dari seluruh history | Menghapus jejak permanen. TAPI: mengubah hash setiap commit setelah titik rewrite -> semua collaborator wajib re-clone / hard-reset. Perlu force-push ke remote; berisiko merusak PR terbuka, referensi commit di issue/dokumentasi eksternal, dan history CI/CD. Wajib koordinasi eksplisit seluruh tim, idealnya saat tidak ada PR aktif. |
+| Bikin repo baru dari snapshot bersih | Kehilangan seluruh riwayat lama (bukan cuma password — konteks histori development). Berlebihan kecuali ada alasan compliance sangat ketat. |
+
+Rekomendasi (bukan keputusan):
+- Jika repo PRIVATE + akses terbatas internal => opsi "tidak rewrite" umumnya
+  cukup, ASALKAN rotasi sudah benar-benar terverifikasi berhasil oleh pemilik
+  (lewat scripts/qa/verify-rotation.mjs). Jangan adopsi rekomendasi ini jika
+  rotasi belum terverifikasi.
+- Jika repo dipublikasikan, pernah publik, atau ada kekhawatiran kredensial
+  serupa dipakai di sistem lain => rewrite history lebih disarankan walau
+  biaya koordinasi lebih tinggi.
+
+Decision: <OPEN — menunggu keputusan pemilik project>
