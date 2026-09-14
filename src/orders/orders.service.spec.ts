@@ -7,6 +7,7 @@ import { OrdersService } from './orders.service';
 import { DatabaseService } from '../database/database.service';
 import { EnrollmentsService } from '../enrollments/enrollments.service';
 import { AuditService } from '../audit/audit.service';
+import type { StoragePort } from '../media/storage.port';
 import type { OrderRow } from './interfaces/order.interface';
 
 /**
@@ -22,6 +23,11 @@ describe('OrdersService', () => {
   let mockDb: { queryAll: jest.Mock; queryOne: jest.Mock; execute: jest.Mock };
   let mockEnrollmentsService: jest.Mocked<EnrollmentsService>;
   let mockAuditService: jest.Mocked<AuditService>;
+  let mockStorage: {
+    createUploadUrl: jest.Mock;
+    createReadUrl: jest.Mock;
+    confirmUpload: jest.Mock;
+  };
 
   beforeEach(() => {
     mockDb = {
@@ -38,11 +44,21 @@ describe('OrdersService', () => {
     } as unknown as jest.Mocked<EnrollmentsService>;
     mockAuditService = { record: jest.fn() } as unknown as jest.Mocked<AuditService>;
 
+    mockStorage = {
+      createUploadUrl: jest.fn().mockResolvedValue('http://local-storage.test/upload/x'),
+      createReadUrl: jest.fn(),
+      confirmUpload: jest.fn(),
+    };
+
     service = new OrdersService(
       mockDb as unknown as DatabaseService,
       mockEnrollmentsService,
       mockAuditService,
     );
+    // B.3 mint needs the storage port; assigned via cast so the spec compiles
+    // and runs (assertion-level RED) before the constructor accepts it.
+    (service as unknown as { storage?: StoragePort }).storage =
+      mockStorage as unknown as StoragePort;
   });
 
   afterEach(() => {
@@ -191,10 +207,12 @@ describe('OrdersService', () => {
         status: 'pending',
       });
 
-      // Fixture updated for BUG-T9-01: the old key 'proofs/ord-1.jpg' encoded
-      // the buggy acceptance of foreign prefixes; allowed-prefix keys only.
+      // Fixture updated for B.3: proof keys must be own-scope
+      // private/users/{caller}/proofs/{uuid}.{ext}; the old admin-prefixed
+      // 'private/courses/…' key is now rejected with 400.
       const result = await service.submitPaymentProof('user-1', 'ord-1', {
-        objectKey: 'private/courses/ord-1.jpg',
+        objectKey:
+          'private/users/user-1/proofs/2f1c9a44-77a5-4a1e-9d12-5f2a6b1c0d3e.png',
       });
 
       expect(result.message).toBe('Bukti pembayaran berhasil diunggah.');
@@ -267,18 +285,194 @@ describe('OrdersService', () => {
       expect(mockDb.execute).not.toHaveBeenCalled();
     });
 
-    it('should still accept an allowed-prefix key even when it may reference another user upload (documented residual, not fixed here)', async () => {
-      // Residual gap: cross-user references within an allowed prefix cannot be
-      // closed without an attribution column + student upload endpoint
-      // (product decision — see T16 report). This test pins that behaviour.
+    it('should reject a legacy admin-prefixed course key with 400 (B.3: proof keys leave the admin prefix entirely)', async () => {
+      pendingOwnOrder();
+
+      await expect(
+        service.submitPaymentProof('user-1', 'ord-1', {
+          objectKey: 'private/courses/qa-t9-proof-B-1789276695.png',
+        }),
+      ).rejects.toThrow('objectKey bukti pembayaran tidak valid.');
+      expect(mockDb.execute).not.toHaveBeenCalled();
+    });
+
+    // B.3 (BUG-T9-01 residual CLOSED): the cross-user reference within an
+    // allowed prefix is now a 403 — proof keys must carry the caller's own
+    // private/users/{caller}/proofs/ scope minted by paymentProofUrl.
+    it('should reject another user\'s proof key with ForbiddenException (B.3 closes BUG-T9-01 residual)', async () => {
+      pendingOwnOrder();
+
+      await expect(
+        service.submitPaymentProof('user-1', 'ord-1', {
+          objectKey:
+            'private/users/22222222-2222-4222-8222-222222222222/proofs/11111111-1111-4111-8111-111111111111.png',
+        }),
+      ).rejects.toThrow(
+        new ForbiddenException('objectKey bukti pembayaran bukan milik Anda.'),
+      );
+      expect(mockDb.execute).not.toHaveBeenCalled();
+    });
+
+    it('should reject a forged other-user proof prefix with ForbiddenException (B.3)', async () => {
+      pendingOwnOrder();
+
+      await expect(
+        service.submitPaymentProof('user-1', 'ord-1', {
+          objectKey:
+            'private/users/9b2f8f9e-2c30-4c1a-8b3c-9c1f2f3f4f5f/proofs/33333333-3333-4333-8333-333333333333.webp',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockDb.execute).not.toHaveBeenCalled();
+    });
+
+    it('should reject a proof key with a non-uuid object segment with 400 (B.3 malformed shape)', async () => {
+      pendingOwnOrder();
+
+      await expect(
+        service.submitPaymentProof('user-1', 'ord-1', {
+          objectKey: 'private/users/user-1/proofs/not-a-uuid.png',
+        }),
+      ).rejects.toThrow('objectKey bukti pembayaran tidak valid.');
+      expect(mockDb.execute).not.toHaveBeenCalled();
+    });
+
+    it('should insert the proof when the caller submits their own minted proof key (B.3 happy path)', async () => {
       pendingOwnOrder();
 
       const result = await service.submitPaymentProof('user-1', 'ord-1', {
-        objectKey: 'private/courses/qa-t9-proof-B-1789276695.png',
+        objectKey:
+          'private/users/user-1/proofs/4d8f3a21-56bc-4def-9a01-77e21c0b9f45.jpg',
       });
 
       expect(result.proofId).toBeDefined();
       expect(mockDb.execute).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // paymentProofUrl (B.3): student-owned upload surface. Mints
+  // private/users/{caller}/proofs/{uuid}.{ext}, presigned PUT via the storage
+  // port, and records an 'issued' media_objects row (migration 0008).
+  // ---------------------------------------------------------------------------
+  describe('paymentProofUrl', () => {
+    async function paymentProofUrl(
+      userId: string,
+      orderId: string,
+      dto: { contentType: string; size: number },
+    ) {
+      const fn = (
+        service as unknown as {
+          paymentProofUrl?: (
+            u: string,
+            o: string,
+            d: { contentType: string; size: number },
+          ) => Promise<{ key: string; uploadUrl: string; expiresIn: number }>;
+        }
+      ).paymentProofUrl;
+      expect(typeof fn).toBe('function');
+      return (
+        service as unknown as {
+          paymentProofUrl: (
+            u: string,
+            o: string,
+            d: { contentType: string; size: number },
+          ) => Promise<{ key: string; uploadUrl: string; expiresIn: number }>;
+        }
+      ).paymentProofUrl(userId, orderId, dto);
+    }
+
+    const ownPendingOrder = () =>
+      mockDb.queryOne.mockResolvedValueOnce({
+        id: 'ord-1',
+        user_id: 'user-1',
+        status: 'pending',
+      });
+
+    it('should mint an own-scope proof key with presigned PUT and record media_objects issued', async () => {
+      ownPendingOrder();
+
+      const res = await paymentProofUrl('user-1', 'ord-1', {
+        contentType: 'image/png',
+        size: 2048,
+      });
+
+      expect(res.key).toMatch(
+        /^private\/users\/user-1\/proofs\/[a-f0-9-]{36}\.png$/,
+      );
+      expect(res.uploadUrl).toBe('http://local-storage.test/upload/x');
+      expect(res.expiresIn).toBe(3600);
+      expect(mockStorage.createUploadUrl).toHaveBeenCalledWith({
+        key: res.key,
+        contentType: 'image/png',
+        contentLength: 2048,
+      });
+
+      expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      const [insertSql, insertParams] = mockDb.execute.mock.calls[0];
+      expect(insertSql).toContain('INSERT INTO media_objects');
+      expect(insertParams).toEqual([
+        expect.any(String),
+        res.key,
+        'user-1',
+        'image/png',
+        2048,
+        'issued',
+        expect.any(String),
+      ]);
+    });
+
+    it('should derive the key extension from the declared contentType', async () => {
+      ownPendingOrder();
+      const res = await paymentProofUrl('user-1', 'ord-1', {
+        contentType: 'application/pdf',
+        size: 4096,
+      });
+      expect(res.key).toMatch(/\.pdf$/);
+    });
+
+    it('should throw NotFoundException for an unknown order', async () => {
+      mockDb.queryOne.mockResolvedValueOnce(undefined);
+
+      await expect(
+        paymentProofUrl('user-1', 'ord-1', {
+          contentType: 'image/png',
+          size: 2048,
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw ForbiddenException for another user\'s order', async () => {
+      mockDb.queryOne.mockResolvedValueOnce({
+        id: 'ord-1',
+        user_id: 'other-user',
+        status: 'pending',
+      });
+
+      await expect(
+        paymentProofUrl('user-1', 'ord-1', {
+          contentType: 'image/png',
+          size: 2048,
+        }),
+      ).rejects.toThrow(
+        new ForbiddenException('Anda tidak memiliki akses ke order ini.'),
+      );
+      expect(mockStorage.createUploadUrl).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException when the order is not pending', async () => {
+      mockDb.queryOne.mockResolvedValueOnce({
+        id: 'ord-1',
+        user_id: 'user-1',
+        status: 'paid',
+      });
+
+      await expect(
+        paymentProofUrl('user-1', 'ord-1', {
+          contentType: 'image/png',
+          size: 2048,
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockStorage.createUploadUrl).not.toHaveBeenCalled();
     });
   });
 

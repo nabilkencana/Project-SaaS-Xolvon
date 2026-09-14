@@ -13,6 +13,7 @@ describe('OrdersController', () => {
     mockOrdersService = {
       checkout: jest.fn(),
       submitPaymentProof: jest.fn(),
+      paymentProofUrl: jest.fn(),
       verifyOrder: jest.fn(),
       activateOrder: jest.fn(),
       cancelOrder: jest.fn(),
@@ -62,6 +63,39 @@ describe('OrdersController', () => {
       'ord-1',
       dto,
     );
+  });
+
+  it('should call paymentProofUrl on service', async () => {
+    const mockResponse = {
+      key: 'private/users/user-1/proofs/6f1c9a44-77a5-4a1e-9d12-5f2a6b1c0d3e.png',
+      uploadUrl: 'http://local-storage.test/upload/x',
+      expiresIn: 3600,
+    };
+
+    const svcWithMint = mockOrdersService as unknown as {
+      paymentProofUrl?: jest.Mock;
+    };
+    expect(typeof svcWithMint.paymentProofUrl).toBe('function');
+    svcWithMint.paymentProofUrl!.mockResolvedValueOnce(mockResponse);
+
+    const ctrlWithMint = controller as unknown as {
+      paymentProofUrl?: (
+        userId: string,
+        orderId: string,
+        dto: { contentType: string; size: number },
+      ) => Promise<unknown>;
+    };
+    expect(typeof ctrlWithMint.paymentProofUrl).toBe('function');
+    const result = await ctrlWithMint.paymentProofUrl!('user-1', 'ord-1', {
+      contentType: 'image/png',
+      size: 2048,
+    });
+
+    expect(result).toBe(mockResponse);
+    expect(svcWithMint.paymentProofUrl).toHaveBeenCalledWith('user-1', 'ord-1', {
+      contentType: 'image/png',
+      size: 2048,
+    });
   });
 
   it('should call verifyOrder on service', async () => {

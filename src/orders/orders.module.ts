@@ -3,11 +3,12 @@ import { DatabaseModule } from '../database/database.module';
 import { AuthModule } from '../auth/auth.module';
 import { EnrollmentsModule } from '../enrollments/enrollments.module';
 import { AuditModule } from '../audit/audit.module';
+import { MediaModule } from '../media/media.module';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 
 @Module({
-  imports: [DatabaseModule, AuthModule, EnrollmentsModule, AuditModule],
+  imports: [DatabaseModule, AuthModule, EnrollmentsModule, AuditModule, MediaModule],
   controllers: [OrdersController],
   providers: [OrdersService],
   exports: [OrdersService],

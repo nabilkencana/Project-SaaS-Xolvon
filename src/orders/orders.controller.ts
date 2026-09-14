@@ -22,9 +22,10 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { OrdersService } from './orders.service';
-import { ORDER_THROTTLE } from '../config/throttle.config';
+import { ORDER_THROTTLE, SIGNED_THROTTLE } from '../config/throttle.config';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { SubmitPaymentProofDto } from './dto/submit-payment-proof.dto';
+import { PaymentProofUrlDto } from './dto/payment-proof-url.dto';
 import {
   OrderActivationResponseDto,
   OrderResponseDto,
@@ -52,6 +53,34 @@ export class OrdersController {
     @Body() dto: CreateOrderDto,
   ): Promise<OrderResponseDto> {
     return this.ordersService.checkout(userId, dto);
+  }
+
+  /**
+   * User: Mint a presigned PUT URL for the payment proof of an own pending
+   * order. Key scope is server-assigned from the JWT subject (B.3).
+   */
+  @UseGuards(AuthGuard)
+  @Throttle(SIGNED_THROTTLE)
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Mint a presigned payment-proof upload URL (own order)' })
+  @ApiCreatedResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'Server-minted own-scope object key.' },
+        uploadUrl: { type: 'string', description: 'Presigned PUT URL.' },
+        expiresIn: { type: 'integer', description: 'URL validity in seconds.' },
+      },
+    },
+  })
+  @Post(':id/payment-proof-url')
+  @HttpCode(HttpStatus.CREATED)
+  async paymentProofUrl(
+    @CurrentUser('sub') userId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) orderId: string,
+    @Body() dto: PaymentProofUrlDto,
+  ): Promise<{ key: string; uploadUrl: string; expiresIn: number }> {
+    return this.ordersService.paymentProofUrl(userId, orderId, dto);
   }
 
   /**

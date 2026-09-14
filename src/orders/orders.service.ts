@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,11 +9,12 @@ import * as crypto from 'node:crypto';
 import { DatabaseService } from '../database/database.service';
 import { EnrollmentsService } from '../enrollments/enrollments.service';
 import { AuditService } from '../audit/audit.service';
+import { STORAGE_PORT, type StoragePort } from '../media/storage.port';
 import type { OrderRow } from './interfaces/order.interface';
 import type { OrderItemRow } from './interfaces/order-item.interface';
 import type { CreateOrderDto } from './dto/create-order.dto';
 import type { SubmitPaymentProofDto } from './dto/submit-payment-proof.dto';
-import { MEDIA_PREFIXES } from '../media/dto/media.dto';
+import type { PaymentProofUrlDto } from './dto/payment-proof-url.dto';
 import {
   OrderActivationResponseDto,
   OrderResponseDto,
@@ -25,6 +27,7 @@ export class OrdersService {
     private readonly db: DatabaseService,
     private readonly enrollmentsService: EnrollmentsService,
     private readonly audit: AuditService,
+    @Inject(STORAGE_PORT) private readonly storage?: StoragePort,
   ) {}
 
   /**
@@ -156,6 +159,68 @@ export class OrdersService {
   }
 
   /**
+   * User: Mints a presigned PUT URL for the payment proof of an OWN pending
+   * order. The key scope is server-assigned from the JWT subject —
+   * `private/users/{userId}/proofs/{uuid}.{ext}` — so a student can only ever
+   * obtain keys inside their own prefix (B.3, closes the BUG-T9-01 residual).
+   * The minted key is recorded in `media_objects` with status 'issued'
+   * (migration 0008).
+   */
+  async paymentProofUrl(
+    userId: string,
+    orderId: string,
+    dto: PaymentProofUrlDto,
+  ): Promise<{ key: string; uploadUrl: string; expiresIn: number }> {
+    const order = await this.db.queryOne<OrderRow>(
+      'SELECT id, user_id, status FROM orders WHERE id = ? LIMIT 1;',
+      [orderId],
+    );
+
+    if (!order) {
+      throw new NotFoundException('Order tidak ditemukan.');
+    }
+
+    if (order.user_id !== userId) {
+      throw new ForbiddenException('Anda tidak memiliki akses ke order ini.');
+    }
+
+    if (order.status !== 'pending') {
+      throw new BadRequestException(
+        'Bukti pembayaran hanya dapat diunggah untuk order yang berstatus pending.',
+      );
+    }
+
+    if (!this.storage) {
+      throw new Error('Storage provider is not configured.');
+    }
+
+    const extension = OrdersService.PROOF_EXTENSIONS[dto.contentType] ?? 'bin';
+    const key = `private/users/${userId}/proofs/${crypto.randomUUID()}.${extension}`;
+    const uploadUrl = await this.storage.createUploadUrl({
+      key,
+      contentType: dto.contentType,
+      contentLength: dto.size,
+    });
+
+    const now = new Date().toISOString();
+    await this.db.execute(
+      'INSERT INTO media_objects (id, key, uploaded_by, content_type, size_bytes, status, created_at) ' +
+        'VALUES (?, ?, ?, ?, ?, ?, ?);',
+      [
+        crypto.randomUUID(),
+        key,
+        userId,
+        dto.contentType,
+        dto.size,
+        'issued',
+        now,
+      ],
+    );
+
+    return { key, uploadUrl, expiresIn: 3600 };
+  }
+
+  /**
    * User: Submits transfer payment proof object key (Cloudflare R2 private).
    * Validates ownership to prevent IDOR attacks.
    * Records the proof only — the order status stays 'pending' until an admin verifies it.
@@ -186,13 +251,12 @@ export class OrdersService {
       );
     }
 
-    // BUG-T9-01 remediation: the object key is client-supplied but is later
-    // rendered by admins via POST /admin/media/read-url, so it must never
-    // escape the storage-prefix scheme (traversal, encoded traversal,
-    // backslashes, or foreign prefixes). Residual (open product decision):
-    // referencing another user's key WITHIN an allowed prefix cannot be
-    // closed without an attribution column + a student upload endpoint.
-    this.assertValidProofObjectKey(dto.objectKey);
+    // BUG-T9-01 (B.3, residual CLOSED): proof keys must be the caller's own
+    // server-minted private/users/{caller}/proofs/{uuid}.{ext} scope. Foreign
+    // prefixes, traversal and malformed shapes are 400; a valid proof key
+    // belonging to another user is 403. Admin-prefixed course keys can no
+    // longer ride the proof path at all.
+    this.assertOwnProofKey(dto.objectKey, userId);
 
     const proofId = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -370,14 +434,24 @@ export class OrdersService {
     );
   }
 
+  /** Key extension derived from the declared proof MIME type. */
+  private static readonly PROOF_EXTENSIONS: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'application/pdf': 'pdf',
+    'video/mp4': 'mp4',
+  };
+
   /**
    * Server-side validation of a client-supplied payment-proof object key
-   * (BUG-T9-01). Mirrors MediaService.isServerKey (media.service.ts:29-33)
-   * and additionally rejects percent-encoded traversal: the key is decoded
-   * iteratively, every intermediate form is checked for traversal, and the
-   * fully-decoded form must sit under an allowed MEDIA_PREFIXES entry.
+   * (B.3, closing the BUG-T9-01 residual). The key must be the exact shape
+   * `private/users/{caller}/proofs/{uuid}.{ext}` minted by paymentProofUrl:
+   * traversal (any iterative-decode form), backslashes, foreign prefixes and
+   * malformed shapes are 400; a valid proof key whose owner segment is not
+   * the caller is 403.
    */
-  private assertValidProofObjectKey(objectKey: string): void {
+  private assertOwnProofKey(objectKey: string, userId: string): void {
     const forms = [objectKey];
     let current = objectKey;
     for (let depth = 0; depth < 2; depth++) {
@@ -394,13 +468,24 @@ export class OrdersService {
     const escaped = forms.some(
       (form) => form.includes('..') || form.includes('\\'),
     );
-    const underAllowedPrefix = MEDIA_PREFIXES.some((prefix) =>
-      current.startsWith(`${prefix}/`),
-    );
+    // Owner is compared strictly against the JWT subject below; the segment
+    // pattern is intentionally permissive so a well-shaped foreign-owner key
+    // yields 403 (cross-user) instead of 400 (malformed).
+    const shape = escaped
+      ? null
+      : /^private\/users\/([^/]+)\/proofs\/[a-f0-9-]{36}\.[a-z0-9]+$/.exec(
+          objectKey,
+        );
 
-    if (escaped || !underAllowedPrefix) {
+    if (escaped || !shape) {
       throw new BadRequestException(
         'objectKey bukti pembayaran tidak valid.',
+      );
+    }
+
+    if (shape[1] !== userId) {
+      throw new ForbiddenException(
+        'objectKey bukti pembayaran bukan milik Anda.',
       );
     }
   }
