@@ -188,7 +188,7 @@ No claim of a clean audit is made here.
 - **Status:** Remediated & Verified Closed
 
 #### 1. Incident Description
-During endpoint testing and deployed re-verification sessions, initial administrative bootstrap credentials for `admin@xolvon.com` (`SuperSecretPassword123!`) appeared in plaintext within terminal execution logs, curl command outputs, and session transcripts. Subsequent git history audit revealed that the literal password was also committed in `README.md:473` under commit `9a6d1d7` on 2026-09-12.
+During endpoint testing and deployed re-verification sessions, initial administrative bootstrap credentials for `admin@xolvon.com` ( `<REDACTED-LEAKED-PASSWORD>` ) appeared in plaintext within terminal execution logs, curl command outputs, and session transcripts. Subsequent git history audit revealed that the literal password was also committed in `README.md:473` under commit `9a6d1d7` on 2026-09-12.
 
 In accordance with zero-trust principles, any credential recorded in logs or transcripts accessible during code review or team handoffs is considered compromised regardless of storage location.
 

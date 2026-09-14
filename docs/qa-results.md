@@ -891,7 +891,7 @@ Seluruh 9 item blocker dari laporan sebelumnya telah diselesaikan dan dibuktikan
 Laporan penutupan 3 item addendum tindak lanjut:
 
 1. **Item 1 — Rotasi Kredensial Administrator:**
-   - Password awal `admin@xolvon.com` (`SuperSecretPassword123!`) yang terekspos di log/transcript dan commit `9a6d1d7` telah dirotasi secara menyeluruh.
+   - Password awal `admin@xolvon.com` (`<REDACTED-LEAKED-PASSWORD>`) yang terekspos di log/transcript dan commit `9a6d1d7` telah dirotasi secara menyeluruh.
    - Password baru di-generate secara acak 32-karakter dan di-hash menggunakan Argon2id (`m=65536, p=4, t=3`).
    - Hash baru diaplikasikan pada D1 `xolvon-staging` dan `xolvon-production`. Seluruh 57 sesi admin lama di-purge dari tabel `sessions`.
    - Login dengan password lama terbukti GAGAL (HTTP 401 Unauthorized); login dengan password baru terbukti BERHASIL (HTTP 200 OK).
