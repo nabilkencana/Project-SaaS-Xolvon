@@ -143,6 +143,45 @@ describe('AuthService', () => {
       expect(mockPasswordService.hash).not.toHaveBeenCalled();
       expect(mockDb.execute).not.toHaveBeenCalled();
     });
+
+    // BUG-race-500 (RED → GREEN): two concurrent POST /auth/register for the
+    // same email both pass the SELECT pre-check, then race on INSERT. The
+    // UNIQUE constraint violation from SQLite (better-sqlite3) must be mapped
+    // to ConflictException (409) instead of leaking an unhandled 500.
+    it('should throw ConflictException (409) when the INSERT raises a UNIQUE constraint (race path)', async () => {
+      // Pre-check: no existing user found (both requests pass this)
+      mockDb.queryOne.mockResolvedValueOnce(undefined);
+      mockPasswordService.hash.mockResolvedValueOnce('$argon2id$mockedhash');
+
+      // INSERT raises the UNIQUE constraint that better-sqlite3 propagates
+      const uniqueError = new Error(
+        'UNIQUE constraint failed: users.email',
+      );
+      mockDb.execute.mockRejectedValueOnce(uniqueError);
+
+      await expect(service.register(registerDto)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+
+      await expect(
+        service.register({
+          ...registerDto,
+          email: registerDto.email + '.extra',
+        }),
+      ).resolves.toBeDefined(); // sanity: non-UNIQUE error should NOT be swallowed
+    });
+
+    it('should rethrow non-UNIQUE errors from db.execute unchanged (no swallowing)', async () => {
+      mockDb.queryOne.mockResolvedValueOnce(undefined);
+      mockPasswordService.hash.mockResolvedValueOnce('$argon2id$mockedhash');
+
+      const dbError = new Error('disk I/O error');
+      mockDb.execute.mockRejectedValueOnce(dbError);
+
+      await expect(service.register(registerDto)).rejects.toThrow(
+        'disk I/O error',
+      );
+    });
   });
 
   // -------------------------------------------------------------------------

@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Injectable,
   Logger,
   HttpException,
@@ -126,6 +127,16 @@ export class D1Service implements OnModuleInit {
 
     // Cloudflare API returned an error envelope or non-2xx status
     if (!response.ok || !body.success) {
+      // SQLite UNIQUE constraint violation: map to 409 ConflictException so
+      // concurrent INSERT races (e.g. double-register) surface as a clean
+      // conflict rather than leaking a 502 to the client (BUG-race-500).
+      const isUniqueConstraint = (body.errors ?? []).some((e) =>
+        (e.message ?? '').includes('UNIQUE constraint failed'),
+      );
+      if (isUniqueConstraint) {
+        throw new ConflictException('UNIQUE constraint failed.');
+      }
+
       this.logger.error('D1 API error response', {
         status: response.status,
         errors: body.errors,

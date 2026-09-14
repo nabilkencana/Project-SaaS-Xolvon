@@ -54,25 +54,40 @@ export class AuthService {
     const now = new Date().toISOString();
     const passwordHash = await this.passwordService.hash(dto.password);
 
-    await this.db.execute(
-      `INSERT INTO users (
-        id, name, email, phone, password_hash, role, status,
-        email_verified, phone_verified, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-      [
-        id,
-        dto.name,
-        dto.email,
-        dto.phone,
-        passwordHash,
-        'user',
-        'active',
-        0,
-        0,
-        now,
-        now,
-      ],
-    );
+    try {
+      await this.db.execute(
+        `INSERT INTO users (
+          id, name, email, phone, password_hash, role, status,
+          email_verified, phone_verified, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        [
+          id,
+          dto.name,
+          dto.email,
+          dto.phone,
+          passwordHash,
+          'user',
+          'active',
+          0,
+          0,
+          now,
+          now,
+        ],
+      );
+    } catch (err: unknown) {
+      // BUG-race-500: two concurrent requests both passed the SELECT pre-check
+      // above, then raced on INSERT. The UNIQUE constraint on users.email fires
+      // for the second one. Map to 409 instead of leaking an unhandled 500.
+      // The D1 path produces ConflictException directly from D1Service, so
+      // only the better-sqlite3 Error shape needs to be caught here.
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('UNIQUE constraint failed')) {
+        throw new ConflictException(
+          'An account with these credentials is already registered.',
+        );
+      }
+      throw err;
+    }
 
     return toSafeUser({
       id,
