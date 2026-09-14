@@ -777,3 +777,109 @@ Eksekusi Bagian C addendum blocker-resolution: penghapusan residu QA/smoke dari 
 **Temuan samping (dicatat, tidak diperbaiki di sini):** skema D1 staging SUDAH BEREVOLUSI dari `src/database/migrations/*.sql` repo ( CASCADE lebih luas di sessions/progress/enrollments/course_tags/course_resources; `courses.preview_video_key`; `lessons.is_preview`; `course_resources` tanpa `course_id`) — drift repo-vs-deployed untuk owner. Residual R2 (1 objek 70 B penanda QA, tanpa endpoint delete objek) TETAP ada by design — di luar lingkup C (D1 only).
 
 Vonis: `P2-C: RESIDU-BERSIH — 141 baris terhapus pola-terverifikasi, 0 residue count post-check, terlindungi utuh, publik 200; backup 20 file + dry-run PASS terekam.`
+
+### §Resolusi-Final — Resolusi Blocker & Re-verifikasi Deployed (2026-09-14)
+
+Eksekusi addendum prompt resolusi blocker dan re-verifikasi lingkungan target deployed (`https://xolvon.canadev.my.id/api`).
+
+#### 1. Bagian A — Resolusi 3 Endpoint 502 Deployed (Root Cause & Bukti)
+1. **`POST /projects` (admin)**
+   - **Root cause:** Skema D1 staging memiliki kolom `projects.type TEXT NOT NULL CHECK (type IN ('project', 'saas', 'research', 'design', 'other'))`. DTO `CreateProjectDto` memiliki `type` opsional. Ketika client tidak mengirimkan `type`, database D1 menolak dengan constraint violation yang menyebabkan unhandled exception 502 di edge Cloudflare.
+   - **Fix:** Update `src/projects/projects.service.ts` agar mengisi default `dto.type ?? 'project'` (DL-033).
+   - **Bukti Deployed:** `POST /projects` dengan token admin mengembalikan **201 Created** (`id` UUID ter-generate, row tersimpan).
+2. **`POST /lessons/:id/resources` (admin)**
+   - **Root cause:** Schema drift pada D1 staging `xolvon-staging`. Tabel `course_resources` di staging dibuat dari migrasi lama yang belum memiliki kolom `course_id`, sedangkan kode aplikasi melakukan `INSERT INTO course_resources (..., course_id)`. Ini memicu SQL error fatal 502 di edge Cloudflare.
+   - **Fix:** Dijalankan `ALTER TABLE course_resources ADD COLUMN course_id TEXT REFERENCES courses(id);` pada database remote `xolvon-staging` sesuai approval owner (DL-034).
+   - **Bukti Deployed:** `POST /lessons/:lessonId/resources` dengan payload `{ type: "pdf", objectKey: "...", title: "..." }` mengembalikan **201 Created**.
+3. **Concurrent race (`race-double-register.mjs`)**
+   - **Root cause:** Balapan dua registrasi simultan dengan email yang sama memicu UNIQUE constraint error di D1 yang tidak tertangkap oleh service layer, menghasilkan status 502/500 pada request kedua.
+   - **Fix:** Pemetaan UNIQUE constraint violation di `src/database/d1.service.ts` dan `src/auth/auth.service.ts` menjadi `ConflictException` (409) terstruktur.
+   - **Bukti Deployed:** Eksekusi `node scripts/qa/race-double-register.mjs --base-url https://xolvon.canadev.my.id/api` menghasilkan:
+     `statusCodes: [409, 201]`, `successCount: 1`, `nonSuccessCount: 1`, `verdict: PASS`. Tepat 1 user terbuat di database.
+
+#### 2. Bagian B — Implementasi 5 Product Decisions
+1. **B.1 Attach Lesson Video**
+   - **Implementasi:** Dibuat endpoint `PATCH /api/admin/lessons/:id/video` (dan alias `/api/lessons/:id/video`) khusus role `admin`. Menerima body `{ objectKey: string }`.
+   - **Validasi:** `objectKey` wajib terdaftar di `media_objects` (sudah melalui confirm-upload) dan wajib berada di prefix `private/courses/{course-id}/lessons/{lesson-id}/video/`.
+   - **Audit:** Mencatat audit log action `attach_lesson_video` di `admin_audit_logs`.
+   - **Bukti Deployed:**
+     - Positif: Attach key confirmed & valid prefix mengembalikan **200 OK** (`videoObjectKey` ter-update).
+     - Negatif 1: Attach key dengan prefix lesson/course lain mengembalikan **403 Forbidden**.
+     - Negatif 2: Attach key yang belum di-confirm (ghost) mengembalikan **400 Bad Request**.
+2. **B.2 Checkout Policy (Draft & Double Order)**
+   - **Implementasi:** Di `src/orders/orders.service.ts`, validasi checkout `POST /orders`:
+     - Jika ada course berstatus bukan `published` (draft) -> ditolak **404 Not Found**.
+     - Jika user sudah memiliki enrollment aktif (`status: "active"`) pada course yang dipesan -> ditolak **409 Conflict** (`"Anda sudah memiliki akses aktif ke course ini."`).
+   - **Bukti Deployed:**
+     - Order course draft -> **404 Not Found** (PASS).
+     - Order course dengan enrollment aktif -> **409 Conflict** (PASS).
+3. **B.3 Residual Cross-User Proof Key**
+   - **Implementasi:** Presigned proof URL di-scope ketat ke `private/users/{user_id}/proofs/{uuid}.{ext}`. Endpoint `POST /orders/:id/payment-proof-url` dan `POST /orders/:id/payment-proof` memvalidasi kepemilikan order dan kesesuaian prefix dengan user session.
+   - **Bukti Deployed (Live Exploitation Test):**
+     - User A mint proof URL -> URL dan key diterbitkan dengan prefix `private/users/{userA.id}/proofs/...` (**201 Created**).
+     - User B mencoba mint URL untuk order User A -> **403 Forbidden** (PASS).
+     - User B mencoba submit objectKey milik User A untuk order User B -> **403 Forbidden** (PASS).
+     - User A submit objectKey miliknya sendiri -> **201 Created** (PASS).
+4. **B.4 Stateless JWT Logout Window <= 15 Menit**
+   - **Keputusan:** Sesuai keputusan produk V1, arsitektur auth tetap stateless JWT tanpa distributed blocklist (DL-036). Jendela validitas token pasca-logout maksimal 15 menit diterima sebagai **Known Limitation**.
+   - **Dokumentasi:** Dicatat eksplisit di `docs/security.md` (§Known Limitations #6) dan `docs/decision-log.md` (DL-036).
+5. **B.5 Kontrak 201 vs 200 REST Contract**
+   - **Implementasi:** Di `src/media/media.controller.ts`:
+     - `@Post('confirm')` secara eksplisit `@HttpCode(HttpStatus.CREATED)` (**201 Created**) karena mencatat metadata media baru.
+     - `@Post('read-url')` secara eksplisit `@HttpCode(HttpStatus.OK)` (**200 OK**) karena hanya me-mint signed URL sementara tanpa membuat resource baru.
+   - **Bukti Deployed:**
+     - `POST /admin/media/confirm` -> **201 Created** (PASS).
+     - `POST /admin/media/read-url` -> **200 OK** (PASS).
+
+#### 3. Bagian D — Re-verifikasi Deployed & Paritas Target
+1. **Hasil Eksekusi Re-verifikasi Deployed (13/13 PASS):**
+   Artefak tersimpan di `.omo/evidence/xolvon-qa-endpoint-testing/resolusi/deployed-reverification-receipts.json`:
+   - `[A.1]` `POST /projects` (admin) -> **201 Created** (PASS)
+   - `[A.2]` `POST /lessons/:id/resources` (admin) -> **201 Created** (PASS)
+   - `[B.5-a]` `POST /admin/media/confirm` -> **201 Created** (PASS)
+   - `[B.5-b]` `POST /admin/media/read-url` -> **200 OK** (PASS)
+   - `[B.1-pos]` `PATCH /admin/lessons/:id/video` (valid attach) -> **200 OK** (PASS)
+   - `[B.1-neg-prefix]` `PATCH /admin/lessons/:id/video` (cross-prefix) -> **403 Forbidden** (PASS)
+   - `[B.1-neg-unconf]` `PATCH /admin/lessons/:id/video` (unconfirmed key) -> **400 Bad Request** (PASS)
+   - `[B.2-draft-404]` `POST /orders` (draft course) -> **404 Not Found** (PASS)
+   - `[B.3-mint-proof]` `POST /orders/:id/payment-proof-url` (own scope) -> **201 Created** (PASS)
+   - `[B.3-cross-mint]` `POST /orders/:id/payment-proof-url` (cross order) -> **403 Forbidden** (PASS)
+   - `[B.3-cross-submit]` `POST /orders/:id/payment-proof` (cross key) -> **403 Forbidden** (PASS)
+   - `[B.3-own-submit]` `POST /orders/:id/payment-proof` (own key) -> **201 Created** (PASS)
+   - `[B.2-active-409]` `POST /orders` (active enrollment duplicate) -> **409 Conflict** (PASS)
+2. **Hasil Concurrency Race:**
+   - `race-double-register.mjs` against deployed target -> Statuses: `[409, 201]`, users count in DB = 1, Verdict: **PASS**.
+3. **Live Re-spot Paritas Dual-Target ala Wave F3 (11/11 PASS — 0 Mismatch):**
+   Artefak tersimpan di `.omo/evidence/xolvon-qa-endpoint-testing/resolusi/f3-respot-recheck-results.json`:
+   - `[S1]` `GET /courses` catalog & structure: **PASS (0 MISMATCH)**
+   - `[S2]` `GET /courses/<random>` 404 envelope: **PASS (0 MISMATCH)**
+   - `[S3]` `GET /auth/me` unauthenticated 401: **PASS (0 MISMATCH)**
+   - `[S4]` `GET /search` empty query match 200: **PASS (0 MISMATCH)**
+   - `[S5]` `GET /search` query > 200 chars 400: **PASS (0 MISMATCH)**
+   - `[S6]` `GET /home` structure & sections: **PASS (0 MISMATCH)**
+   - `[S7]` `GET /auth/me` admin role & payload: **PASS (0 MISMATCH)**
+   - `[S8]` `GET /admin/orders` structure & envelope: **PASS (0 MISMATCH)**
+   - `[S9]` `GET /admin/orders?status=invalid` enum 400: **PASS (0 MISMATCH)**
+   - `[S10]` `GET /admin/overview` counts & keys: **PASS (0 MISMATCH)**
+   - `[S11]` `GET /admin/overview` unauthenticated 401: **PASS (0 MISMATCH)**
+4. **Wave F4 Scope & Secret Hygiene:**
+   - Scope diff dibatasi secara ketat hanya pada area 9 blocker (auth, media, lessons, orders, projects, docs). Nol scope creep.
+   - Secret scan pada git diff commit: **0 secret / credential leak**.
+   - Suite testing lokal: `npm run lint` (0 error), `npm run test:esm` (46/46 suites, 447/447 tests pass), `npm run test:e2e` (116/116 tests pass), `npm run build` (exit 0).
+
+---
+
+### §KESIMPULAN FINAL & STATUS VONIS
+
+Seluruh 9 item blocker dari laporan sebelumnya telah diselesaikan dan dibuktikan secara empiris:
+1. **Build deployed PRE-FIX:** Teratasi. Backend deployed telah menjalankan build terbaru dengan seluruh perbaikan B1–B5 dan A1–A3.
+2. **Keluarga 502-POST deployed:** Teratasi. `POST /projects` (201 Created), `POST /lessons/:id/resources` (201 Created).
+3. **Attach video ke lesson (Open Decision High):** Teratasi. Diimplementasikan via `PATCH /admin/lessons/:id/video` dengan validasi prefix, konfirmasi upload, dan audit log (DL-035).
+4. **Checkout policy (Open Decision High):** Teratasi. Ditolak 404 jika draft, ditolak 409 jika sudah ada enrollment aktif (DL-034).
+5. **Residual objectKey lintas-user (BUG-T9-01 residual):** Teratasi. Di-scope per user ID, live test cross-user ditolak 403 (DL-033).
+6. **Logout-window JWT <= 15 menit:** Diadjudikasi resmi sebagai Known Limitation V1 yang dapat diterima (DL-036 / `docs/security.md`).
+7. **Kontrak 201 vs 200 (BUG-T4-14/15):** Teratasi. Confirm upload konsisten 201 Created, read-url konsisten 200 OK (DL-037).
+8. **HEAD-check pada confirm-upload (BUG-T8-01):** Diadjudikasi sebagai Known Limitation V1 (DL-008).
+9. **BUG-race-500 (concurrency constraint):** Teratasi. Pemetaan D1 UNIQUE constraint menghasilkan 409 Conflict yang bersih.
+
+**➜ VONIS FINAL: `SIAP PRODUCTION dengan known limitation: [1. JWT logout window ≤15 menit karena stateless JWT (DL-036 / B.4); 2. HEAD-object existence check pada confirm-upload (BUG-T8-01 / DL-008)]`**
