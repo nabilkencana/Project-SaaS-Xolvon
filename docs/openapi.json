@@ -342,6 +342,66 @@
         ]
       }
     },
+    "/api/orders/{id}/payment-proof-url": {
+      "post": {
+        "operationId": "OrdersController_paymentProofUrl",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentProofUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "description": "Server-minted own-scope object key."
+                    },
+                    "uploadUrl": {
+                      "type": "string",
+                      "description": "Presigned PUT URL."
+                    },
+                    "expiresIn": {
+                      "type": "integer",
+                      "description": "URL validity in seconds."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Mint a presigned payment-proof upload URL (own order)",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
     "/api/orders/{id}/payment-proof": {
       "post": {
         "operationId": "OrdersController_submitPaymentProof",
@@ -501,6 +561,149 @@
         "summary": "Cancel a pending order (admin)",
         "tags": [
           "orders"
+        ]
+      }
+    },
+    "/api/admin/media/upload-url": {
+      "post": {
+        "operationId": "MediaController_createUploadUrl",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUploadUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "description": "Server-generated object key."
+                    },
+                    "uploadUrl": {
+                      "type": "string",
+                      "description": "Presigned PUT URL."
+                    },
+                    "expiresIn": {
+                      "type": "integer",
+                      "description": "URL validity in seconds."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a presigned upload URL for private/public media (admin)",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/api/admin/media/confirm": {
+      "post": {
+        "operationId": "MediaController_confirm",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmMediaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "confirmed": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Confirm a completed upload (admin, B.5 -> 201)",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/api/admin/media/read-url": {
+      "post": {
+        "operationId": "MediaController_readUrl",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmMediaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "readUrl": {
+                      "type": "string",
+                      "description": "Presigned GET URL."
+                    },
+                    "expiresIn": {
+                      "type": "integer",
+                      "description": "URL validity in seconds."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a presigned read URL for private media (admin, B.5 -> 200)",
+        "tags": [
+          "media"
         ]
       }
     },
@@ -2188,6 +2391,52 @@
         ]
       }
     },
+    "/api/lessons/{id}/video": {
+      "patch": {
+        "operationId": "LessonsController_attachVideo",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachLessonVideoDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonAdminDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Attach video to a lesson (admin)",
+        "tags": [
+          "lessons"
+        ]
+      }
+    },
     "/api/courses/{slug}/lessons": {
       "get": {
         "operationId": "CourseLessonsController_listPublishedByCourseSlug",
@@ -2268,67 +2517,25 @@
         ]
       }
     },
-    "/api/admin/media/upload-url": {
-      "post": {
-        "operationId": "MediaController_createUploadUrl",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateUploadUrlDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "key": {
-                      "type": "string",
-                      "description": "Server-generated object key."
-                    },
-                    "uploadUrl": {
-                      "type": "string",
-                      "description": "Presigned PUT URL."
-                    },
-                    "expiresIn": {
-                      "type": "integer",
-                      "description": "URL validity in seconds."
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
+    "/api/admin/lessons/{id}/video": {
+      "patch": {
+        "operationId": "AdminLessonsController_attachVideo",
+        "parameters": [
           {
-            "bearerAuth": []
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
-        "summary": "Create a presigned upload URL (admin)",
-        "tags": [
-          "media"
-        ]
-      }
-    },
-    "/api/admin/media/confirm": {
-      "post": {
-        "operationId": "MediaController_confirm",
-        "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ConfirmMediaDto"
+                "$ref": "#/components/schemas/AttachLessonVideoDto"
               }
             }
           }
@@ -2339,15 +2546,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "key": {
-                      "type": "string"
-                    },
-                    "confirmed": {
-                      "type": "boolean"
-                    }
-                  }
+                  "$ref": "#/components/schemas/LessonAdminDto"
                 }
               }
             }
@@ -2358,56 +2557,9 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Confirm a completed upload (admin)",
+        "summary": "Attach confirmed video to a lesson (admin, B.1)",
         "tags": [
-          "media"
-        ]
-      }
-    },
-    "/api/admin/media/read-url": {
-      "post": {
-        "operationId": "MediaController_readUrl",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConfirmMediaDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "readUrl": {
-                      "type": "string",
-                      "description": "Presigned GET URL."
-                    },
-                    "expiresIn": {
-                      "type": "integer",
-                      "description": "URL validity in seconds."
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "summary": "Create a presigned read URL for private media (admin)",
-        "tags": [
-          "media"
+          "admin/lessons"
         ]
       }
     },
@@ -3137,6 +3289,32 @@
           "verifiedAt"
         ]
       },
+      "PaymentProofUrlDto": {
+        "type": "object",
+        "properties": {
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/webp",
+              "application/pdf",
+              "video/mp4"
+            ],
+            "description": "MIME type of the payment proof file being uploaded."
+          },
+          "size": {
+            "type": "number",
+            "description": "File size in bytes, 1-524288000.",
+            "minimum": 1,
+            "maximum": 524288000
+          }
+        },
+        "required": [
+          "contentType",
+          "size"
+        ]
+      },
       "SubmitPaymentProofDto": {
         "type": "object",
         "properties": {
@@ -3169,6 +3347,60 @@
           "message",
           "orderId",
           "activatedCoursesCount"
+        ]
+      },
+      "CreateUploadUrlDto": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string",
+            "enum": [
+              "public/site",
+              "public/projects",
+              "private/projects",
+              "private/courses"
+            ],
+            "description": "Allowed storage prefix for the key."
+          },
+          "contentType": {
+            "type": "string",
+            "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/webp",
+              "application/pdf",
+              "video/mp4"
+            ],
+            "description": "MIME type of the file being uploaded."
+          },
+          "size": {
+            "type": "number",
+            "description": "File size in bytes, 1-524288000.",
+            "minimum": 1,
+            "maximum": 524288000
+          },
+          "filename": {
+            "type": "string",
+            "description": "Original file name."
+          }
+        },
+        "required": [
+          "prefix",
+          "contentType",
+          "size",
+          "filename"
+        ]
+      },
+      "ConfirmMediaDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Object key of the uploaded file."
+          }
+        },
+        "required": [
+          "key"
         ]
       },
       "LessonSummaryDto": {
@@ -4155,6 +4387,19 @@
           "orderIndex"
         ]
       },
+      "AttachLessonVideoDto": {
+        "type": "object",
+        "properties": {
+          "objectKey": {
+            "type": "string",
+            "description": "Object key of the confirmed lesson video.",
+            "example": "private/courses/course-uuid/lessons/lesson-uuid/video/video.mp4"
+          }
+        },
+        "required": [
+          "objectKey"
+        ]
+      },
       "CreateLessonDto": {
         "type": "object",
         "properties": {
@@ -4178,60 +4423,6 @@
         "required": [
           "title",
           "orderIndex"
-        ]
-      },
-      "CreateUploadUrlDto": {
-        "type": "object",
-        "properties": {
-          "prefix": {
-            "type": "string",
-            "enum": [
-              "public/site",
-              "public/projects",
-              "private/projects",
-              "private/courses"
-            ],
-            "description": "Allowed storage prefix for the key."
-          },
-          "contentType": {
-            "type": "string",
-            "enum": [
-              "image/jpeg",
-              "image/png",
-              "image/webp",
-              "application/pdf",
-              "video/mp4"
-            ],
-            "description": "MIME type of the file being uploaded."
-          },
-          "size": {
-            "type": "number",
-            "description": "File size in bytes, 1-524288000.",
-            "minimum": 1,
-            "maximum": 524288000
-          },
-          "filename": {
-            "type": "string",
-            "description": "Original file name."
-          }
-        },
-        "required": [
-          "prefix",
-          "contentType",
-          "size",
-          "filename"
-        ]
-      },
-      "ConfirmMediaDto": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "description": "Object key of the uploaded file."
-          }
-        },
-        "required": [
-          "key"
         ]
       },
       "CreateCourseResourceDto": {

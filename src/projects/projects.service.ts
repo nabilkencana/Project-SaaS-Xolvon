@@ -139,6 +139,7 @@ export class ProjectsService {
 
     const id = randomUUID();
     const now = new Date().toISOString();
+    const projectType = dto.type ?? 'project';
 
     await this.db.execute(
       `INSERT INTO projects (
@@ -149,7 +150,7 @@ export class ProjectsService {
         id,
         dto.title,
         dto.slug,
-        dto.type ?? null,
+        projectType,
         dto.summary ?? null,
         dto.problem ?? null,
         dto.solution ?? null,
@@ -169,7 +170,7 @@ export class ProjectsService {
       id,
       title: dto.title,
       slug: dto.slug,
-      type: dto.type ?? null,
+      type: projectType,
       summary: dto.summary ?? null,
       problem: dto.problem ?? null,
       solution: dto.solution ?? null,

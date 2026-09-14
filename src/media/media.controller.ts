@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
@@ -23,7 +23,8 @@ import { OPENAPI_BEARER_SCHEME } from '../openapi/openapi.config';
 @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
 export class MediaController {
   constructor(private readonly mediaService: MediaService) {}
-  @ApiOperation({ summary: 'Create a presigned upload URL (admin)' })
+
+  @ApiOperation({ summary: 'Create a presigned upload URL for private/public media (admin)' })
   @ApiCreatedResponse({
     schema: {
       type: 'object',
@@ -34,16 +35,27 @@ export class MediaController {
       },
     },
   })
-  @Throttle(SIGNED_THROTTLE) @Post('upload-url') createUploadUrl(@Body() dto: CreateUploadUrlDto, @CurrentUser('sub') adminId: string) { return this.mediaService.createUploadUrl(dto, adminId); }
-  @ApiOperation({ summary: 'Confirm a completed upload (admin)' })
-  @ApiOkResponse({
+  @Throttle(SIGNED_THROTTLE)
+  @Post('upload-url')
+  @HttpCode(HttpStatus.CREATED)
+  createUploadUrl(@Body() dto: CreateUploadUrlDto, @CurrentUser('sub') adminId: string) {
+    return this.mediaService.createUploadUrl(dto, adminId);
+  }
+
+  @ApiOperation({ summary: 'Confirm a completed upload (admin, B.5 -> 201)' })
+  @ApiCreatedResponse({
     schema: {
       type: 'object',
       properties: { key: { type: 'string' }, confirmed: { type: 'boolean' } },
     },
   })
-  @Post('confirm') confirm(@Body() dto: ConfirmMediaDto, @CurrentUser('sub') adminId: string) { return this.mediaService.confirm(dto.key, adminId); }
-  @ApiOperation({ summary: 'Create a presigned read URL for private media (admin)' })
+  @Post('confirm')
+  @HttpCode(HttpStatus.CREATED)
+  confirm(@Body() dto: ConfirmMediaDto, @CurrentUser('sub') adminId: string) {
+    return this.mediaService.confirm(dto.key, adminId);
+  }
+
+  @ApiOperation({ summary: 'Create a presigned read URL for private media (admin, B.5 -> 200)' })
   @ApiOkResponse({
     schema: {
       type: 'object',
@@ -53,5 +65,10 @@ export class MediaController {
       },
     },
   })
-  @Throttle(SIGNED_THROTTLE) @Post('read-url') readUrl(@Body() dto: ConfirmMediaDto) { return this.mediaService.readUrl(dto.key); }
+  @Throttle(SIGNED_THROTTLE)
+  @Post('read-url')
+  @HttpCode(HttpStatus.OK)
+  readUrl(@Body() dto: ConfirmMediaDto) {
+    return this.mediaService.readUrl(dto.key);
+  }
 }

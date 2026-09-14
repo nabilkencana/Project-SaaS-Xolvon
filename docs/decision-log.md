@@ -1195,3 +1195,189 @@ instead of audit noise; production runtime is dev-only-surface for 6 of the 7
 findings, and the multer pair depends on an upstream NestJS release or a
 reviewed overrides entry.
 ```
+
+---
+
+```
+ID: DL-033
+Title: Video ObjectKey Attachment to Lesson (B.1)
+Scope: Module (lessons, admin)
+Status: Decided — default engineering, menunggu konfirmasi bisnis
+
+Problem:
+Tidak ada jalur API untuk mengaitkan `video_object_key` yang sudah di-upload dan
+dikonfirmasi via storage presigned URL ke record `lessons` yang bersangkutan.
+
+Existing Requirement:
+Admin harus dapat mengaitkan video lesson yang tersimpan di private storage bucket
+ke record database pelajaran terkait (PRD §21-23).
+
+Options Considered:
+1. Menambahkan parameter `videoObjectKey` ke `PATCH /api/lessons/:id`. (Ditolak:
+   memungkinkan pengubahan metadata video tanpa validasi kepemilikan path/prefix
+   dan riwayat konfirmasi media).
+2. Endpoint terpisah `PATCH /admin/lessons/:id/video` (admin only) dengan body
+   `{ objectKey: string }`, validasi prefix ketat
+   `private/courses/{course_id}/lessons/{lesson_id}/video/`, verifikasi status
+   `confirmed` pada tabel `media_objects`, dan pencatatan audit log
+   `attach_lesson_video`. (Dipilih).
+
+Decision:
+Implementasikan `PATCH /admin/lessons/:id/video` (dan alias `PATCH /lessons/:id/video`)
+dengan:
+1. Validasi lesson existence (404).
+2. Validasi traversal `..`, `\` (400).
+3. Validasi course-lesson prefix matching: penolakan cross-lesson key dengan 403 Forbidden.
+4. Validasi rekaman konfirmasi pada `media_objects` (400 bila belum dikonfirmasi).
+5. Audit log mutasi `attach_lesson_video` ke `admin_audit_logs`.
+
+Date:
+2026-09-14
+
+Impact:
+Admin panel memiliki alur deterministik aman untuk memasang video pelajaran tanpa celah
+salah taut atau akses sembarang file di private storage.
+```
+
+---
+
+```
+ID: DL-034
+Title: Checkout Policy for Active Enrollment & Draft Course Checkout (B.2)
+Scope: Module (orders)
+Status: Decided — default engineering, menunggu konfirmasi bisnis
+
+Problem:
+User dapat membuat order baru untuk course yang sudah aktif dimilikinya, dan user dapat
+mengecek ID course berstatus draft melalui `POST /orders` jika mengetahui UUID-nya.
+
+Existing Requirement:
+E1b order ganda saat enrollment aktif dan FIND-T9-06 checkout course draft belum memiliki
+definisi status code yang konsisten.
+
+Options Considered:
+1. Mengizinkan order ganda (misal untuk perpanjangan masa aktif). (Ditolak: sistem belum
+   memiliki konsep subscription/renewal di V1).
+2. Menolak order untuk course yang sudah berstatus `active` dengan 409 Conflict, dan menolak
+   course yang bukan `published` (draft) dengan 404 Not Found agar konsisten dengan public
+   catalog. (Dipilih).
+
+Decision:
+Di `OrdersService.checkout()`:
+1. Cek status course di database: jika ada course yang statusnya bukan `published`, tolak
+   dengan 404 Not Found ("Course tidak ditemukan atau belum dipublikasikan").
+2. Cek tabel `enrollments`: jika user sudah memiliki enrollment berstatus `active` untuk
+   course yang dipesan, tolak dengan 409 Conflict ("Anda sudah memiliki akses aktif ke course ini").
+
+Date:
+2026-09-14
+
+Impact:
+Mencegah user membayar ganda untuk materi yang sudah diakses, dan mencegah kebocoran status
+materi draft ke pengguna biasa.
+```
+
+---
+
+```
+ID: DL-035
+Title: Server-Minted User-Scoped Payment Proof Keys (B.3)
+Scope: Module (orders, media)
+Status: Decided — default engineering, menunggu konfirmasi bisnis
+
+Problem:
+User berpotensi menyerempet atau menggunakan objectKey milik user lain jika object key
+generation bukti bayar tidak memiliki kepemilikan yang terisolasi per user di path storage.
+
+Existing Requirement:
+BUG-T9-01 residual: pencegahan IDOR dan substitusi file pada bukti transfer pembayaran.
+
+Options Considered:
+1. Mengizinkan client menentukan object key acak di bawah prefix umum `private/proofs/`.
+   (Ditolak: security by obscurity).
+2. Endpoint server-minted `POST /orders/:id/payment-proof-url` yang menghasilkan presigned PUT
+   dengan path spesifik `private/users/{userId}/proofs/{uuid}.{ext}`, menyimpan rekaman status
+   `issued` di tabel `media_objects`, dan memvalidasi kepemilikan strictly via `assertOwnProofKey`
+   (403 Forbidden bila berbeda user). (Dipilih).
+
+Decision:
+1. Buat migration `0008_media_objects.sql` untuk pelacakan metadata objek penyimpanan.
+2. Endpoint `POST /orders/:id/payment-proof-url` menghasilkan URL PUT dengan path terisolasi
+   per user ID JWT.
+3. `POST /orders/:id/payment-proof` memverifikasi kesesuaian path dengan JWT caller.
+
+Date:
+2026-09-14
+
+Impact:
+Tutup tuntas potensi kebocoran dan substitusi bukti pembayaran lintas pengguna dengan isolasi
+path kriptografis dan verifikasi token.
+```
+
+---
+
+```
+ID: DL-036
+Title: Stateless JWT Logout Window ≤15 Minutes as Known Limitation (B.4)
+Scope: Architecture (auth, security)
+Status: Decided — default engineering, menunggu konfirmasi bisnis
+
+Problem:
+Setelah logout, JWT access token yang sudah diterbitkan tetap valid secara kriptografis hingga
+masa berlaku 15 menit habis karena sistem menggunakan stateless JWT tanpa central blacklist/Redis.
+
+Existing Requirement:
+BUG-T6-window: audit menemukan token masih dapat mengakses route ber-guard sebelum TTL 15 menit berakhir.
+
+Options Considered:
+1. Membangun distributed cache / Redis denylist di edge Cloudflare. (Ditolak: perubahan
+   arsitektur besar yang menambah latensi jaringan dan dependensi infrastruktur baru di luar lingkup V1).
+2. Menerima window 15 menit sebagai known limitation arsitektur stateless V1, dengan dokumentasi
+   eksplisit di `docs/security.md` dan pembatalan segera refresh token di database. (Dipilih).
+
+Decision:
+Diterima sebagai known limitation V1. Sesi refresh token dihapus seketika di database saat logout,
+sehingga perpanjangan token tidak dimungkinkan. Token access habis secara alami dalam ≤15 menit.
+Rencana denylist terdistribusi dijadwalkan untuk evaluasi arsitektur V2 jika bisnis membutuhkan.
+
+Date:
+2026-09-14
+
+Impact:
+Mempertahankan kesederhanaan infrastruktur edge Cloudflare Workers dan D1 tanpa dependensi pihak ketiga.
+```
+
+---
+
+```
+ID: DL-037
+Title: HTTP 201 vs 200 REST Contract on Confirm-Upload and Read-URL (B.5)
+Scope: Contract (media, api)
+Status: Decided — default engineering, menunggu konfirmasi bisnis
+
+Problem:
+Inkonsistensi status code antara pembuatan resource / metadata baru (201 Created) versus
+pembuatan URL baca sementara tanpa mutasi resource (200 OK).
+
+Existing Requirement:
+BUG-T4-14/15: keselarasan kontrak REST standar pada media operations.
+
+Options Considered:
+1. Menyeragamkan semua POST menjadi 200 OK. (Ditolak: melanggar semantik REST pada operasi yang
+   membuat entitas).
+2. `POST /admin/media/confirm` mengembalikan 201 Created karena memutasi dan membuat rekaman metadata;
+   seluruh endpoint penyerahan read URL sementara (`POST /admin/media/read-url`,
+   `POST /orders/:id/payment-proof-url`, `GET /lessons/:id/video-url`) mengembalikan 200 OK. (Dipilih).
+
+Decision:
+1. `POST /admin/media/confirm` eksplisit `@HttpCode(HttpStatus.CREATED)` (201).
+2. `POST /admin/media/read-url` eksplisit `@HttpCode(HttpStatus.OK)` (200).
+3. Update OpenAPI spec dan dokumentasi kontrak `docs/api-contract.md`.
+
+Date:
+2026-09-14
+
+Impact:
+Kontrak status code REST standar dan konsisten di seluruh modul backend.
+```
+

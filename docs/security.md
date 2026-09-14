@@ -169,4 +169,11 @@ No claim of a clean audit is made here.
    recorded under DL-018, not an oversight.
 5. **Sanitization neutralizes markup at the write boundary only**; renderers
    must still apply contextual escaping (defense in depth over CSP).
+6. **JWT logout window ≤15 menit (stateless JWT limitation, B.4).** Setelah
+   logout, JWT access token yang sudah diterbitkan tetap valid secara kriptografis
+   hingga kedaluwarsa (maksimal 15 menit) karena arsitektur token bersifat stateless
+   tanpa denylist/Redis terpusat. Ini merupakan acceptable risk yang disetujui
+   untuk V1 guna mempertahankan skalabilitas edge zero-state Cloudflare Workers;
+   revokasi server-side instan dijadwalkan sebagai pertimbangan arsitektur token blacklist
+   di V2. Refresh token di sisi lain di-revoke secara instan di database saat logout.
 

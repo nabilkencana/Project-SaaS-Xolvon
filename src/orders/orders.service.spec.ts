@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -107,6 +108,35 @@ describe('OrdersService', () => {
         new BadRequestException(
           'Total amount order harus lebih besar dari 0.',
         ),
+      );
+    });
+
+    it('should throw NotFoundException (404) if a course is not published (B.2 draft course checkout)', async () => {
+      mockDb.queryAll.mockResolvedValueOnce([
+        { id: 'c-draft', price: 100000, status: 'draft' },
+      ]);
+
+      await expect(
+        service.checkout('user-1', {
+          courseIds: ['c-draft'],
+        }),
+      ).rejects.toThrow(
+        new NotFoundException('Course tidak ditemukan atau belum dipublikasikan.'),
+      );
+    });
+
+    it('should throw ConflictException (409) if user already has an active enrollment (B.2 active order)', async () => {
+      mockDb.queryAll.mockResolvedValueOnce([
+        { id: 'c-active', price: 100000, status: 'published' },
+      ]);
+      mockDb.queryOne.mockResolvedValueOnce({ id: 'enr-123' }); // active enrollment found
+
+      await expect(
+        service.checkout('user-1', {
+          courseIds: ['c-active'],
+        }),
+      ).rejects.toThrow(
+        new ConflictException('Anda sudah memiliki akses aktif ke course ini.'),
       );
     });
 

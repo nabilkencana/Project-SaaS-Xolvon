@@ -5,6 +5,7 @@ import { AuditModule } from '../audit/audit.module';
 import { MediaModule } from '../media/media.module';
 import { LessonsController } from './lessons.controller';
 import { CourseLessonsController } from './course-lessons.controller';
+import { AdminLessonsController } from './admin-lessons.controller';
 import { LessonsService } from './lessons.service';
 
 /**
@@ -14,7 +15,7 @@ import { LessonsService } from './lessons.service';
  */
 @Module({
   imports: [DatabaseModule, AuthModule, AuditModule, MediaModule],
-  controllers: [LessonsController, CourseLessonsController],
+  controllers: [LessonsController, CourseLessonsController, AdminLessonsController],
   providers: [LessonsService],
   exports: [LessonsService],
 })

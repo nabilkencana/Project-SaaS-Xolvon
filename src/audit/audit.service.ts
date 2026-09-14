@@ -18,6 +18,7 @@ export const AUDIT_ACTIONS = [
   'update',
   'delete',
   'role_change',
+  'attach_lesson_video',
 ] as const;
 
 /** The `action` parameter is a controlled string: callers must use AUDIT_ACTIONS values. */

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -48,14 +49,29 @@ export class OrdersService {
 
     // 2. Fetch prices from courses table
     const placeholders = dto.courseIds.map(() => '?').join(', ');
-    const coursesQuery = `SELECT id, price FROM courses WHERE id IN (${placeholders});`;
-    const courses = await this.db.queryAll<{ id: string; price: number }>(
+    const coursesQuery = `SELECT id, price, status FROM courses WHERE id IN (${placeholders});`;
+    const courses = await this.db.queryAll<{ id: string; price: number; status?: string }>(
       coursesQuery,
       dto.courseIds,
     );
 
     if (courses.length !== dto.courseIds.length) {
       throw new BadRequestException('Satu atau lebih course tidak ditemukan.');
+    }
+
+    // B.2: Course must be published. Non-published courses return 404 (draft is hidden from public view).
+    const nonPublished = courses.some((c) => c.status && c.status !== 'published');
+    if (nonPublished) {
+      throw new NotFoundException('Course tidak ditemukan atau belum dipublikasikan.');
+    }
+
+    // B.2: Check if user already has an active enrollment for any of the courses.
+    const activeEnrollment = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM enrollments WHERE user_id = ? AND course_id IN (${placeholders}) AND status = 'active' LIMIT 1;`,
+      [userId, ...dto.courseIds],
+    );
+    if (activeEnrollment && activeEnrollment.id) {
+      throw new ConflictException('Anda sudah memiliki akses aktif ke course ini.');
     }
 
     const courseMap = new Map<string, number>(

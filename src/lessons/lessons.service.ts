@@ -249,6 +249,75 @@ export class LessonsService {
     return toLessonAdminDto(row);
   }
 
+  /**
+   * Admin: attach confirmed video objectKey to a lesson (B.1).
+   * Validates:
+   * - lesson exists (404)
+   * - key prefix must be `private/courses/{courseId}/lessons/{lessonId}/video/`
+   * - traversal / invalid format (400)
+   * - belongs to different course/lesson (403)
+   * - confirmed in media_objects (400)
+   * - audits action `attach_lesson_video`
+   */
+  async attachVideo(
+    adminId: string,
+    lessonId: string,
+    objectKey: string,
+  ): Promise<LessonAdminDto> {
+    const lesson = await this.getLessonOrThrow(lessonId);
+
+    // 1. Path traversal or malformed key check
+    if (
+      !objectKey ||
+      typeof objectKey !== 'string' ||
+      objectKey.includes('..') ||
+      objectKey.includes('\\')
+    ) {
+      throw new BadRequestException('objectKey video tidak valid.');
+    }
+
+    // 2. Strict course and lesson prefix scoping: private/courses/{courseId}/lessons/{lessonId}/video/
+    const expectedPrefix = `private/courses/${lesson.course_id}/lessons/${lesson.id}/video/`;
+    if (!objectKey.startsWith(expectedPrefix)) {
+      // Check if it looks like a lesson video key from another course/lesson
+      if (objectKey.startsWith('private/courses/') && objectKey.includes('/video/')) {
+        throw new ForbiddenException(
+          'objectKey video bukan milik lesson ini.',
+        );
+      }
+      throw new BadRequestException(
+        `objectKey harus berada di prefix ${expectedPrefix}`,
+      );
+    }
+
+    // 3. Must be recorded as confirmed in media_objects
+    const media = await this.db.queryOne<{ id: string }>(
+      `SELECT id FROM media_objects WHERE key = ? AND status = 'confirmed' LIMIT 1;`,
+      [objectKey],
+    );
+    if (!media) {
+      throw new BadRequestException(
+        'objectKey belum melalui proses confirm-upload.',
+      );
+    }
+
+    const now = new Date().toISOString();
+    await this.db.execute(
+      `UPDATE lessons SET video_object_key = ? WHERE id = ?;`,
+      [objectKey, lessonId],
+    );
+
+    await this.audit.record(adminId, 'attach_lesson_video', 'lesson', lessonId, {
+      objectKey,
+      courseId: lesson.course_id,
+    });
+
+    return toLessonAdminDto({
+      ...lesson,
+      video_object_key: objectKey,
+    });
+  }
+
   private async getLessonOrThrow(id: string): Promise<LessonRow> {
     const row = await this.db.queryOne<LessonRow>(
       `SELECT * FROM lessons WHERE id = ? LIMIT 1;`,

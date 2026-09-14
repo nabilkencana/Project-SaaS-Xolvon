@@ -8,8 +8,10 @@ import { LocalTestStorageService } from './local-test-storage.service';
 import { R2StorageService } from './r2-storage.service';
 import { STORAGE_PORT } from './storage.port';
 
+import { DatabaseModule } from '../database/database.module';
+
 @Module({
-  imports: [ConfigModule, AuthModule, AuditModule], controllers: [MediaController], providers: [MediaService, LocalTestStorageService,
+  imports: [ConfigModule, AuthModule, AuditModule, DatabaseModule], controllers: [MediaController], providers: [MediaService, LocalTestStorageService,
     { provide: STORAGE_PORT, inject: [ConfigService, LocalTestStorageService], useFactory: (config: ConfigService, local: LocalTestStorageService) => config.get('STORAGE_DRIVER') === 'r2' ? new R2StorageService(config) : local },],
   exports: [STORAGE_PORT],
 })

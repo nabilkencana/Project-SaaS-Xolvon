@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { LessonsService } from './lessons.service';
 import { DatabaseService } from '../database/database.service';
 import { AuditService } from '../audit/audit.service';
@@ -327,6 +331,73 @@ describe('LessonsService', () => {
       mockDb.queryOne.mockResolvedValueOnce(undefined);
 
       await expect(service.remove('admin-1', 'ghost')).rejects.toThrow(NotFoundException);
+      expect(mockDb.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('attachVideo (B.1)', () => {
+    const validKey = 'private/courses/course-1/lessons/lesson-1/video/intro.mp4';
+
+    it('successfully attaches video when objectKey has valid prefix and is confirmed', async () => {
+      mockDb.queryOne
+        .mockResolvedValueOnce(makeLessonRow({ id: 'lesson-1', course_id: 'course-1' })) // getLessonOrThrow
+        .mockResolvedValueOnce({ id: 'media-1' }); // media_objects confirmed check
+
+      const res = await service.attachVideo('admin-1', 'lesson-1', validKey);
+
+      expect(res.videoObjectKey).toBe(validKey);
+      expect(mockDb.execute).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE lessons SET video_object_key = ?'),
+        expect.arrayContaining([validKey, 'lesson-1']),
+      );
+      expect(mockAudit.record).toHaveBeenCalledWith(
+        'admin-1',
+        'attach_lesson_video',
+        'lesson',
+        'lesson-1',
+        { objectKey: validKey, courseId: 'course-1' },
+      );
+    });
+
+    it('rejects path traversal or malformed key with 400', async () => {
+      mockDb.queryOne.mockResolvedValueOnce(makeLessonRow({ id: 'lesson-1', course_id: 'course-1' }));
+
+      await expect(
+        service.attachVideo('admin-1', 'lesson-1', '../etc/passwd'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockDb.execute).not.toHaveBeenCalled();
+    });
+
+    it('rejects key belonging to another lesson/course with 403 ForbiddenException', async () => {
+      mockDb.queryOne.mockResolvedValueOnce(makeLessonRow({ id: 'lesson-1', course_id: 'course-1' }));
+
+      await expect(
+        service.attachVideo(
+          'admin-1',
+          'lesson-1',
+          'private/courses/course-1/lessons/other-lesson/video/intro.mp4',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockDb.execute).not.toHaveBeenCalled();
+    });
+
+    it('rejects unconfirmed key with 400 BadRequestException', async () => {
+      mockDb.queryOne
+        .mockResolvedValueOnce(makeLessonRow({ id: 'lesson-1', course_id: 'course-1' }))
+        .mockResolvedValueOnce(undefined); // not confirmed in media_objects
+
+      await expect(
+        service.attachVideo('admin-1', 'lesson-1', validKey),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockDb.execute).not.toHaveBeenCalled();
+    });
+
+    it('rejects unknown lesson with 404 NotFoundException', async () => {
+      mockDb.queryOne.mockResolvedValueOnce(undefined);
+
+      await expect(
+        service.attachVideo('admin-1', 'ghost-lesson', validKey),
+      ).rejects.toThrow(NotFoundException);
       expect(mockDb.execute).not.toHaveBeenCalled();
     });
   });

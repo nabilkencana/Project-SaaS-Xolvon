@@ -25,6 +25,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { LessonsService } from './lessons.service';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { ReorderLessonDto } from './dto/reorder-lesson.dto';
+import { AttachLessonVideoDto } from './dto/attach-lesson-video.dto';
 import { LessonAdminDto } from './dto/lesson-response.dto';
 import { SIGNED_THROTTLE } from '../config/throttle.config';
 import { OPENAPI_BEARER_SCHEME } from '../openapi/openapi.config';
@@ -136,5 +137,21 @@ export class LessonsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<LessonAdminDto> {
     return this.lessonsService.unpublish(adminId, id);
+  }
+
+  /** Admin: attach confirmed video objectKey to a lesson (B.1 alias). */
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Attach video to a lesson (admin)' })
+  @ApiOkResponse({ type: LessonAdminDto })
+  @Patch(':id/video')
+  @HttpCode(HttpStatus.OK)
+  async attachVideo(
+    @CurrentUser('sub') adminId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() dto: AttachLessonVideoDto,
+  ): Promise<LessonAdminDto> {
+    return this.lessonsService.attachVideo(adminId, id, dto.objectKey);
   }
 }
