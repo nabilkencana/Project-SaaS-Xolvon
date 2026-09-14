@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { HttpException, HttpStatus } from '@nestjs/common';
+import { ConflictException, HttpException, HttpStatus } from '@nestjs/common';
 import { D1Service } from './d1.service';
 
 // ---------------------------------------------------------------------------
@@ -319,6 +319,55 @@ describe('D1Service', () => {
       for (const call of logSpy.mock.calls) {
         expect(JSON.stringify(call)).not.toContain('test-api-token');
       }
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // BUG-race-500 RED → GREEN: UNIQUE constraint from D1 must be a 409, not 502
+  // -----------------------------------------------------------------------
+  describe('UNIQUE constraint mapping (BUG-race-500)', () => {
+    it('throws ConflictException (409) when D1 errors contain "UNIQUE constraint failed"', async () => {
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: false,
+          result: [],
+          errors: [{ code: 7, message: 'UNIQUE constraint failed: users.email' }],
+          messages: [],
+        }),
+      } as unknown as Response);
+
+      const service = createService();
+      service.onModuleInit();
+
+      await expect(
+        service.query('INSERT INTO users (email) VALUES (?)', ['dup@example.com']),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      await expect(
+        service.query('INSERT INTO users (email) VALUES (?)', ['dup@example.com']),
+      ).rejects.toMatchObject({ status: HttpStatus.CONFLICT });
+    });
+
+    it('still throws generic HttpException BAD_GATEWAY for non-UNIQUE D1 errors', async () => {
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: false,
+          result: [],
+          errors: [{ code: 7500, message: 'some internal D1 error' }],
+          messages: [],
+        }),
+      } as unknown as Response);
+
+      const service = createService();
+      service.onModuleInit();
+
+      await expect(service.query('SELECT 1')).rejects.toMatchObject({
+        status: HttpStatus.BAD_GATEWAY,
+      });
     });
   });
 });
