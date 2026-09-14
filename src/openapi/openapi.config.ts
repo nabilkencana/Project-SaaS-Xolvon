@@ -1,4 +1,8 @@
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import {
+  DocumentBuilder,
+  SwaggerModule,
+} from '@nestjs/swagger';
+import type { OpenAPIObject } from '@nestjs/swagger';
 import type { INestApplication } from '@nestjs/common';
 
 /**
@@ -39,10 +43,10 @@ export function createOpenApiOptions() {
 
 /**
  * Generates the OpenAPI 3 document for a bootstrapped (initialized) Nest
- * application. Used by the export script and the contract e2e spec; the
- * application itself never serves a Swagger UI (DL-028).
+ * application. Used by the runtime Swagger UI, export script, and contract
+ * e2e spec.
  */
-export function createOpenApiDocument(app: INestApplication): object {
+export function createOpenApiDocument(app: INestApplication): OpenAPIObject {
   return SwaggerModule.createDocument(app, createOpenApiOptions());
 }
 

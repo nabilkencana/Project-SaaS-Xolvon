@@ -6,8 +6,7 @@
  * `src/openapi/openapi.config.ts`, verifies that every registered HTTP route
  * appears in the document, and writes the result to `docs/openapi.json`.
  *
- * The application itself never serves a Swagger UI (DL-028): this script is
- * the only consumer of the document factory.
+ * The runtime Swagger UI and this script share the same document factory.
  *
  * Safety: the export must never talk to staging/production services, so the
  * local drivers are forced here regardless of `.env` (dotenv does not
@@ -84,18 +83,20 @@ async function main(): Promise<void> {
     app.setGlobalPrefix('api');
     await app.init();
 
-    const document = createOpenApiDocument(app) as {
-      paths: Record<string, Record<string, unknown>>;
-    };
+    const document = createOpenApiDocument(app);
+    const paths = document.paths as unknown as Record<
+      string,
+      Record<string, unknown>
+    >;
 
     const live = liveRouteKeys(app.getHttpAdapter().getInstance() as HttpServerLike);
     const missing = live.filter(
       (key) => {
         const [method, path] = key.split(' ') as [string, string];
-        return document.paths[path]?.[method] === undefined;
+        return paths[path]?.[method] === undefined;
       },
     );
-    const documented = Object.entries(document.paths).flatMap(([path, ops]) =>
+    const documented = Object.entries(paths).flatMap(([path, ops]) =>
       HTTP_METHODS.filter((m) => ops[m] !== undefined).map((m) => `${m} ${path}`),
     );
     const undocumented = documented.filter((key) => !live.includes(key));

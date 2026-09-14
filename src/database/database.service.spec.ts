@@ -26,6 +26,7 @@ const EXPECTED_SCHEMA_V2_TABLES = [
   'marketplace_items',
   'marketplace_media',
   'admin_audit_logs',
+  'media_objects',
 ];
 
 describe('DatabaseService (better-sqlite3)', () => {
@@ -139,9 +140,9 @@ describe('migration runner', () => {
     return row?.n ?? 0;
   };
 
-  it('creates the full schema v2 on a fresh database: 19 tables + 3 FTS5 virtual tables', async () => {
+  it('creates the full schema v2 on a fresh database: 20 tables + 3 FTS5 virtual tables', async () => {
     const result = await runMigrations(service, MIGRATIONS_DIR);
-    expect(result.applied).toHaveLength(8);
+    expect(result.applied).toHaveLength(9);
 
     const tables = await service.queryAll<{ name: string; sql: string | null }>(
       "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
@@ -162,7 +163,7 @@ describe('migration runner', () => {
       .filter((name) => name !== '_migrations' && !name.includes('_fts'))
       .sort();
     expect(userTables).toEqual([...EXPECTED_SCHEMA_V2_TABLES].sort());
-    expect(await countTables()).toBe(19);
+    expect(await countTables()).toBe(20);
   });
 
   it('is idempotent: running the same migrations again is a no-op without duplicate-table errors', async () => {
@@ -170,9 +171,9 @@ describe('migration runner', () => {
 
     const second = await runMigrations(service, MIGRATIONS_DIR);
     expect(second.applied).toEqual([]);
-    expect(second.skipped).toHaveLength(8);
+    expect(second.skipped).toHaveLength(9);
 
-    expect(await countTables()).toBe(19);
+    expect(await countTables()).toBe(20);
   });
 
   it('keeps migrated data queryable through DatabaseService', async () => {
@@ -191,6 +192,43 @@ describe('migration runner', () => {
       ['u-1'],
     );
     expect(row).toEqual({ id: 'u-1', email: 'nabil@example.com', role: 'user' });
+  });
+
+  it('media_objects (0008): defaults to issued, enforces status CHECK and unique key', async () => {
+    await runMigrations(service, MIGRATIONS_DIR);
+
+    const now = new Date().toISOString();
+    await service.execute(
+      'INSERT INTO media_objects (id, key, uploaded_by, content_type, size_bytes, status, created_at) ' +
+        'VALUES (?, ?, ?, ?, ?, ?, ?)',
+      ['m-1', 'private/users/u-1/proofs/a.png', 'u-1', 'image/png', 10, 'issued', now],
+    );
+    await service.execute(
+      'INSERT INTO media_objects (id, key, uploaded_by) VALUES (?, ?, ?)',
+      ['m-2', 'private/users/u-1/proofs/b.png', 'u-1'],
+    );
+
+    const rows = await service.queryAll<{ key: string; status: string }>(
+      'SELECT key, status FROM media_objects ORDER BY id',
+    );
+    expect(rows).toEqual([
+      { key: 'private/users/u-1/proofs/a.png', status: 'issued' },
+      { key: 'private/users/u-1/proofs/b.png', status: 'issued' },
+    ]);
+
+    await expect(
+      service.execute(
+        'INSERT INTO media_objects (id, key, uploaded_by, status) VALUES (?, ?, ?, ?)',
+        ['m-3', 'private/users/u-1/proofs/c.png', 'u-1', 'bogus'],
+      ),
+    ).rejects.toThrow(/CHECK/);
+
+    await expect(
+      service.execute(
+        'INSERT INTO media_objects (id, key, uploaded_by) VALUES (?, ?, ?)',
+        ['m-4', 'private/users/u-1/proofs/a.png', 'u-1'],
+      ),
+    ).rejects.toThrow(/UNIQUE/);
   });
 
   it('keeps course_fts in sync with courses via triggers on insert, update, and delete', async () => {

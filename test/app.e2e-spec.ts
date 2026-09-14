@@ -887,6 +887,158 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
     });
   });
 
+  // B.3 (BUG-T9-01 residual CLOSED): students get their own upload surface
+  // POST /orders/:id/payment-proof-url and submitPaymentProof only accepts
+  // keys inside the caller's private/users/{caller}/proofs/ scope.
+  describe('payment proof attribution — B.3 mint + own-scope submit (BUG-T9-01 residual)', () => {
+    const orderId = '0b9e6b5e-1111-4222-8333-444455556666';
+    const otherUserId = '22222222-2222-4222-8222-222222222222';
+    const userToken = () =>
+      signToken({
+        sub: 'user-uuid-1',
+        email: 'e2e.user@example.com',
+        role: 'user',
+      });
+
+    const ownPendingOrder = () =>
+      dbQueryOne.mockResolvedValueOnce({
+        id: orderId,
+        user_id: 'user-uuid-1',
+        status: 'pending',
+      });
+
+    it('requires authentication for payment-proof-url with 401', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/orders/${orderId}/payment-proof-url`)
+        .send({ contentType: 'image/png', size: 2048 })
+        .expect(401);
+      expectDbUnused();
+    });
+
+    it('mints an own-scope proof key with presigned PUT and records media_objects issued (201)', async () => {
+      ownPendingOrder();
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/orders/${orderId}/payment-proof-url`)
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .send({ contentType: 'image/png', size: 2048 })
+        .expect(201);
+
+      expect(res.body.key).toMatch(
+        /^private\/users\/user-uuid-1\/proofs\/[a-f0-9-]{36}\.png$/,
+      );
+      // uploadUrl shape depends on the configured storage driver (local-test
+      // stub vs R2 presign) — only its presence is contract-relevant here.
+      expect(typeof res.body.uploadUrl).toBe('string');
+      expect(res.body.uploadUrl.length).toBeGreaterThan(0);
+      expect(res.body.expiresIn).toBe(3600);
+
+      expect(dbExecute).toHaveBeenCalledTimes(1);
+      const [insertSql, insertParams] = dbExecute.mock.calls[0];
+      expect(insertSql).toContain('INSERT INTO media_objects');
+      expect(insertParams).toEqual([
+        expect.any(String),
+        res.body.key,
+        'user-uuid-1',
+        'image/png',
+        2048,
+        'issued',
+        expect.any(String),
+      ]);
+    });
+
+    it('denies minting for another user\'s order with 403 and never touches storage/db writes', async () => {
+      dbQueryOne.mockResolvedValueOnce({
+        id: orderId,
+        user_id: otherUserId,
+        status: 'pending',
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/orders/${orderId}/payment-proof-url`)
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .send({ contentType: 'image/png', size: 2048 })
+        .expect(403);
+
+      expect(res.body.message).toBe('Anda tidak memiliki akses ke order ini.');
+      expect(dbExecute).not.toHaveBeenCalled();
+    });
+
+    it('accepts submitPaymentProof with the key the caller just minted (201)', async () => {
+      ownPendingOrder();
+      const mint = await request(app.getHttpServer())
+        .post(`/api/orders/${orderId}/payment-proof-url`)
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .send({ contentType: 'image/png', size: 2048 })
+        .expect(201);
+
+      dbQueryOne.mockReset();
+      dbExecute.mockReset();
+      ownPendingOrder();
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/orders/${orderId}/payment-proof`)
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .send({ objectKey: mint.body.key })
+        .expect(201);
+
+      expect(res.body.proofId).toBeDefined();
+      const [proofSql] = dbExecute.mock.calls[0];
+      expect(proofSql).toContain('INSERT INTO payment_proofs');
+    });
+
+    it('rejects submitting another user\'s proof key with 403 (cross-user shape)', async () => {
+      ownPendingOrder();
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/orders/${orderId}/payment-proof`)
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .send({
+          objectKey: `private/users/${otherUserId}/proofs/11111111-1111-4111-8111-111111111111.png`,
+        })
+        .expect(403);
+
+      expect(res.body.message).toBe(
+        'objectKey bukti pembayaran bukan milik Anda.',
+      );
+      expect(dbExecute).not.toHaveBeenCalled();
+    });
+
+    it('rejects a forged other-user prefix with 403 and a legacy admin-prefixed key with 400', async () => {
+      ownPendingOrder();
+      await request(app.getHttpServer())
+        .post(`/api/orders/${orderId}/payment-proof`)
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .send({
+          objectKey: `private/users/${otherUserId}/proofs/33333333-3333-4333-8333-333333333333.webp`,
+        })
+        .expect(403);
+
+      dbQueryOne.mockReset();
+      ownPendingOrder();
+      const legacy = await request(app.getHttpServer())
+        .post(`/api/orders/${orderId}/payment-proof`)
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .send({ objectKey: 'private/courses/qa-t9-proof-B-1789276695.png' })
+        .expect(400);
+      expect(legacy.body.message).toBe(
+        'objectKey bukti pembayaran tidak valid.',
+      );
+      expect(dbExecute).not.toHaveBeenCalled();
+    });
+
+    it('still rejects traversal keys with 400', async () => {
+      ownPendingOrder();
+
+      await request(app.getHttpServer())
+        .post(`/api/orders/${orderId}/payment-proof`)
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .send({ objectKey: 'private/users/user-uuid-1/proofs/../../etc/passwd' })
+        .expect(400);
+      expect(dbExecute).not.toHaveBeenCalled();
+    });
+  });
+
   describe('marketplace showcase (public catalog + admin CRUD)', () => {
     const adminToken = () =>
       signToken({

@@ -2,11 +2,13 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { resolveCorsOrigins } from './config/cors';
 import { resolveTrustProxyHops } from './config/trust-proxy';
 import { enableSecurityHeaders } from './security/security-headers';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { createOpenApiDocument } from './openapi/openapi.config';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -15,6 +17,13 @@ async function bootstrap() {
 
   // Global route prefix — all routes served under /api/*
   app.setGlobalPrefix('api');
+
+  // Interactive API documentation and the generated OpenAPI JSON contract.
+  // Mount explicitly under the API prefix so the public URLs are stable.
+  const openApiDocument = createOpenApiDocument(app);
+  SwaggerModule.setup('api/docs', app, openApiDocument, {
+    jsonDocumentUrl: 'api/docs-json',
+  });
 
   // Client-IP resolution for rate limiting (T6). Assumption: staging and
   // production run behind exactly one trusted edge proxy and set
