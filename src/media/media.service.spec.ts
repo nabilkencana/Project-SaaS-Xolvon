@@ -75,4 +75,18 @@ describe('MediaService', () => {
     expect(mockStorage.confirmUpload).not.toHaveBeenCalled();
     expect(mockAudit.record).not.toHaveBeenCalled();
   });
+
+  it('should reject confirm when storage throws NotFoundException (BUG-T8-01)', async () => {
+    const { NotFoundException } = await import('@nestjs/common');
+    mockStorage.confirmUpload.mockRejectedValueOnce(
+      new NotFoundException('Object does not exist in storage.'),
+    );
+
+    await expect(service.confirm('private/courses/missing.png', 'admin-1')).rejects.toThrow(
+      NotFoundException,
+    );
+    expect(mockStorage.confirmUpload).toHaveBeenCalledWith('private/courses/missing.png');
+    expect(mockAudit.record).not.toHaveBeenCalled();
+  });
 });
+

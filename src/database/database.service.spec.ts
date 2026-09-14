@@ -142,7 +142,7 @@ describe('migration runner', () => {
 
   it('creates the full schema v2 on a fresh database: 20 tables + 3 FTS5 virtual tables', async () => {
     const result = await runMigrations(service, MIGRATIONS_DIR);
-    expect(result.applied).toHaveLength(9);
+    expect(result.applied).toHaveLength(10);
 
     const tables = await service.queryAll<{ name: string; sql: string | null }>(
       "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
@@ -171,7 +171,7 @@ describe('migration runner', () => {
 
     const second = await runMigrations(service, MIGRATIONS_DIR);
     expect(second.applied).toEqual([]);
-    expect(second.skipped).toHaveLength(9);
+    expect(second.skipped).toHaveLength(10);
 
     expect(await countTables()).toBe(20);
   });

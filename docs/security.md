@@ -177,3 +177,39 @@ No claim of a clean audit is made here.
    revokasi server-side instan dijadwalkan sebagai pertimbangan arsitektur token blacklist
    di V2. Refresh token di sisi lain di-revoke secara instan di database saat logout.
 
+---
+
+## Security Incident & Remediation Log
+
+### INC-2026-09-14: Credential Exposure in QA Logs and Git History
+
+- **Date Identified:** 2026-09-14
+- **Severity:** High (Administrative Credential Exposure)
+- **Status:** Remediated & Verified Closed
+
+#### 1. Incident Description
+During endpoint testing and deployed re-verification sessions, initial administrative bootstrap credentials for `admin@xolvon.com` (`SuperSecretPassword123!`) appeared in plaintext within terminal execution logs, curl command outputs, and session transcripts. Subsequent git history audit revealed that the literal password was also committed in `README.md:473` under commit `9a6d1d7` on 2026-09-12.
+
+In accordance with zero-trust principles, any credential recorded in logs or transcripts accessible during code review or team handoffs is considered compromised regardless of storage location.
+
+#### 2. Impact Analysis
+- Exposure was limited to the initial development/staging bootstrap administrator account.
+- Potential risk: Unauthorized administrative access to staging environment APIs and D1 database operations if transcripts or repository history were accessed by unauthorized actors.
+- Production user data integrity was not compromised.
+
+#### 3. Remediation Actions Taken
+1. **Administrative Credential Rotation:**
+   - Generated a cryptographically secure random 32-character password.
+   - Re-hashed using Argon2id with production parameters (`m=65536, p=4, t=3`).
+   - Updated `users.password_hash` across all remote database environments (`xolvon-staging` and `xolvon-production`).
+   - Revoked all active administrative sessions (57 sessions purged from `sessions` table).
+2. **Authentication Verification:**
+   - Verified authentication failure using the compromised password: HTTP 401 Unauthorized (`Invalid credentials.`).
+   - Verified successful authentication with the newly rotated password: HTTP 200 OK with valid JWT tokens.
+3. **Repository & Script Sanitization:**
+   - Sanitized `README.md:473` by replacing literal password text with `<STRONG_ADMIN_PASSWORD>`.
+   - Refactored QA test scripts (`.omo/evidence/xolvon-qa-endpoint-testing/resolusi/test-deployed-reverification.mjs` and related test scripts) to ingest admin credentials from environment variables (`process.env.QA_ADMIN_PASSWORD`) instead of hardcoded strings.
+   - Created `.env.test.example` with structured variable placeholders and configured local `.env.test` under `.gitignore` for isolated QA testing.
+4. **Git History & Forward Defense:**
+   - Recorded git commit `9a6d1d7` as the historical origin. Because the password has been invalidated and rotated across all remote databases, the exposed string holds zero operational authority.
+   - Repository contributors must use `ADMIN_BOOTSTRAP_PASSWORD` strictly via private environment variables or secrets managers during deployment.

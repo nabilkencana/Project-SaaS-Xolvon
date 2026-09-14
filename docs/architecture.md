@@ -86,11 +86,18 @@ adapter never leaks the upstream body. `onModuleInit` fail-fasts on missing
 `CLOUDFLARE_*` values. (`src/database/d1.module.ts` exists but is imported
 nowhere — dead code kept for reference.)
 
+#### D1 Databases & Environment Isolation:
+- **Staging D1 (`xolvon-staging`):** UUID `c3b8fc08-1b99-46c3-a118-f6a344e00948`. Default binding in `wrangler.jsonc`.
+- **Production D1 (`xolvon-production`):** UUID `99bf2fc5-0d9e-460c-a02d-a7aaecc369f1`. Bound under `env.production` in `wrangler.jsonc`.
+
 Migrations run through the same `execute()` contract, so the runner
 (`src/database/migrate.ts`) works on either driver; the operational path for
-D1 is `wrangler d1 migrations apply` (see runbook). Applied files are recorded
-in `_migrations` with a SHA-256 hash; hash drift throws (fail-closed,
-forward-only policy).
+D1 is `wrangler d1 migrations apply <db-name> --remote [--env production]`.
+Both `xolvon-staging` and `xolvon-production` are synchronized to the exact same
+schema version up to `0009_course_resources_course_id.sql` (verifiable with
+`npx wrangler d1 migrations list`). Hand-crafted `ALTER TABLE` execution is
+strictly forbidden (HANDBOOK §9); all schema evolutions are versioned SQL
+migrations in `src/database/migrations/`.
 
 ## 4. Storage layer — `StoragePort` interface-first (DL-007)
 

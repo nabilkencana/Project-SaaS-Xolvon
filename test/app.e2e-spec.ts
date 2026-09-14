@@ -2608,6 +2608,19 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
       expect(audit[1][1][4]).toBe(key);
     });
 
+    it('rejects confirming an un-uploaded or fabricated key with 404 (BUG-T8-01 fix)', async () => {
+      const token = await adminToken();
+      const fabricatedKey = 'private/courses/non-existent-object-key.png';
+
+      const res = await request(app.getHttpServer())
+        .post('/api/admin/media/confirm')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ key: fabricatedKey })
+        .expect(404);
+
+      expect(res.body.message).toContain('Object does not exist in storage');
+    });
+
     it('returns safe errors without secrets or stack traces for unknown failures', async () => {
       dbQueryAll.mockRejectedValueOnce(
         new Error('sqlite secret=top-secret connection stack should stay server-side'),

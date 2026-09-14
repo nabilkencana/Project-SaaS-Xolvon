@@ -146,7 +146,16 @@ export async function runMigrations(
     }
 
     for (const statement of splitSqlStatements(content)) {
-      await db.execute(statement);
+      try {
+        await db.execute(statement);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('duplicate column name')) {
+          console.log(`[migrate] Column already exists, skipping: ${statement.slice(0, 60)}...`);
+          continue;
+        }
+        throw err;
+      }
     }
 
     await db.execute(

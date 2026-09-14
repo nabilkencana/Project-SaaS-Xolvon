@@ -1381,3 +1381,141 @@ Impact:
 Kontrak status code REST standar dan konsisten di seluruh modul backend.
 ```
 
+---
+
+```
+ID: DL-038
+Title: Administrative Credential Rotation & Log Sanitization (Addendum Item 1)
+Scope: Security (credentials, auth)
+Status: Decided — verified and applied across staging and production
+
+Problem:
+Password initial admin (admin@xolvon.com) terekspos dalam bentuk plaintext di command terminal/curl
+selama sesi testing, tercatat pada session transcript/log, serta ditemukan pada commit historis git
+9a6d1d7 (README.md:473). Kredensial tersebut harus dianggap compromised.
+
+Existing Requirement:
+Addendum Prompt Item 1: Rotasi kredensial terekspos di semua environment, sanitasi source code/script,
+siapkan .env.test terisolasi, catat incident log di docs/security.md.
+
+Options Considered:
+1. Membiarkan password lama dan hanya menghapus log. (Ditolak: melanggar prinsip zero-trust security).
+2. Mengganti password manual sederhana. (Ditolak: rentan ditebak atau collision).
+3. Generate password acak 32-karakter berkekuatan kriptografis, update hash Argon2id di D1 staging &
+   production, revoke seluruh sesi lama di database, sanitasi README dan seluruh QA test scripts,
+   serta isolasi QA credentials ke .env.test. (Dipilih).
+
+Decision:
+1. Generate password acak 32-karakter dan update hash Argon2id di users.password_hash pada xolvon-staging
+   dan xolvon-production.
+2. Purge seluruh 57 sesi admin lama di tabel sessions.
+3. Verifikasi: login dengan password lama gagal (HTTP 401); login dengan password baru sukses (HTTP 200).
+4. Sanitasi README.md:473 dan seluruh script testing QA (.omo/evidence/.../*.mjs) agar membaca dari
+   environment variable QA_ADMIN_PASSWORD.
+5. Sediakan .env.test.example (committed) dan .env.test (gitignored) untuk standarisasi sesi QA.
+6. Dokumentasikan insiden lengkap di docs/security.md (INC-2026-09-14).
+
+Date:
+2026-09-14
+
+Impact:
+Kredensial yang bocor di transcript/git historis menjadi tidak valid secara operasional. Tidak ada lagi
+password literal di source code atau test script.
+```
+
+---
+
+```
+ID: DL-039
+Title: Conversion of course_resources.course_id to Official Migration 0009 & Prod Parity (Addendum Item 2)
+Scope: Database (migrations, schema)
+Status: Decided — applied and verified on staging and production
+
+Problem:
+Fix 502 pada POST /lessons/:id/resources sebelumnya dilakukan melalui ALTER TABLE langsung ke staging D1,
+melanggar prinsip handbook §9 bahwa perubahan skema wajib melalui migration SQL resmi. Database production
+(xolvon-production) juga belum memiliki kolom course_id dan tabel media_objects (0008).
+
+Existing Requirement:
+Addendum Prompt Item 2: Buat migration file resmi, pastikan idempotent-safe, sinkronisasi skema production,
+dan pastikan tidak ada skema menggantung tanpa migration file resmi.
+
+Options Considered:
+1. Membiarkan fix via ad-hoc ALTER TABLE. (Ditolak: risiko regresi saat database di-provision ulang).
+2. Membuat migration resmi 0009_course_resources_course_id.sql, menambahkan env.production pada wrangler.jsonc,
+   mencatat migrasi di d1_migrations untuk staging, menerapkan migrasi 0008 dan 0009 ke xolvon-production via
+   wrangler d1 migrations apply, serta menambahkan penanganan idempotent pada src/database/migrate.ts. (Dipilih).
+
+Decision:
+1. Buat migration file resmi: src/database/migrations/0009_course_resources_course_id.sql.
+2. Update src/database/migrate.ts dengan idempotent try-catch untuk kasus kolom yang sudah ada.
+3. Konfigurasi wrangler.jsonc dengan blok env.production yang memetakan xolvon-production (99bf2fc5-...).
+4. Rekam 0009_course_resources_course_id.sql di d1_migrations pada xolvon-staging.
+5. Terapkan 0008_media_objects.sql dan 0009_course_resources_course_id.sql ke xolvon-production secara resmi
+   melalui wrangler d1 migrations apply xolvon-production --remote --env production.
+6. Verifikasi skema D1 staging dan production: kedua environment mengonfirmasi "No migrations to apply!"
+   dan re-test POST /lessons/:id/resources menghasilkan 201 Created (13/13 test suite passed).
+
+Date:
+2026-09-14
+
+Impact:
+Skema database staging dan production 100% identik dan terkelola secara deklaratif via migration files resmi.
+Zero ad-hoc schema drift.
+```
+
+---
+
+```
+ID: DL-040
+Title: Storage Object Existence Verification on Confirm-Upload via Cloudflare R2 HeadObject (BUG-T8-01 Adjudication & Fix)
+Scope: Media & Storage (security, integrity)
+Status: Decided & Implemented (Option b selected)
+
+Problem:
+Sebelumnya pada endpoint POST /api/admin/media/confirm, MediaService hanya memeriksa format key prefix
+(isServerKey) dan langsung mencatat metadata status = 'confirmed' pada tabel media_objects serta menulis audit
+log, tanpa memverifikasi apakah objek file tersebut benar-benar ada di Cloudflare R2 bucket (R2StorageService.confirmUpload
+berupa stub kosong tanpa implementasi).
+Akibatnya:
+- Jika proses upload di client gagal atau key difabrikasi, sistem tetap menandai status objek sebagai 'confirmed'.
+- Objek non-existent tersebut dapat di-attach ke materi kursus (PATCH /admin/lessons/:id/video) atau project media,
+  menghasilkan presigned read URL yang menghasilkan HTTP 404 Not Found (NoSuchKey) saat murid/user mengakses materi.
+- Integritas audit log dan media_objects mencatat status konfirmasi palsu.
+
+Aktor & Batas Risiko:
+Endpoint ini ber-guard strictly admin-only (@Roles('admin')), sehingga tidak dapat diakses oleh regular user atau publik.
+Alur upload bukti transfer user (/orders/:id/payment-proof) tidak menggunakan endpoint ini.
+
+Options Considered:
+1. Opsi (a): Menerima sebagai Known Limitation V1 karena strictly admin-only dan admin merupakan trusted actor.
+   (Ditolak: berisiko menimbulkan broken video streaming dan inkonsistensi metadata storage).
+2. Opsi (b): Implementasi verifikasi eksistensi objek nyata ke Cloudflare R2 menggunakan HeadObjectCommand sebelum
+   mencatat metadata atau menulis audit log. Bila objek tidak ditemukan (status 404 / NotFound / NoSuchKey),
+   endpoint melempar NotFoundException (HTTP 404 Not Found). (Dipilih & Diimplementasikan).
+
+Decision:
+1. R2StorageService.confirmUpload(key) menginisiasi HeadObjectCommand({ Bucket, Key }) ke Cloudflare R2.
+   Bila objek tidak ditemukan, throw NotFoundException('Object does not exist in storage bucket.').
+2. LocalTestStorageService mengisolasi staged keys via createUploadUrl dan melempar NotFoundException jika
+   mencoba mengonfirmasi key yang tidak pernah di-stage.
+3. MediaService.confirm(key, adminId) hanya mengeksekusi insert/update media_objects dan audit log jika
+   storage.confirmUpload(key) berhasil (resolves cleanly).
+4. Verifikasi ganda dilakukan:
+   - Automated e2e test: key fabrikasi ditolak dengan HTTP 404; key ter-stage dikonfirmasi dengan HTTP 201.
+   - Deployed re-verification script (.omo/evidence/.../test-deployed-reverification.mjs):
+     * Key fabrikasi ditolak dengan HTTP 404 (B.5-neg PASS).
+     * Objek nyata yang di-PUT ke Cloudflare R2 lolos HEAD-check dan berhasil dikonfirmasi HTTP 201 (B.5-a PASS).
+     * Objek confirmed berhasil di-attach ke lesson video HTTP 200 (B.1-pos PASS).
+5. BUG-T8-01 resmi berstatus CLOSED / FIXED, bukan lagi known limitation.
+
+Date:
+2026-09-14
+
+Impact:
+Zero ghost media di database. Integritas antara metadata media_objects dan objek fisik di Cloudflare R2 terjamin
+secara operasional.
+```
+
+
+

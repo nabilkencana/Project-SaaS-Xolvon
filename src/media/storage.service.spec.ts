@@ -64,4 +64,55 @@ describe('media storage providers', () => {
       expect((error as Error).message).not.toContain('secret-value');
     }
   });
+
+  it('LocalTestStorageService verifies staged keys and rejects unstaged ones (BUG-T8-01)', async () => {
+    const storage = new LocalTestStorageService();
+    const key = 'private/courses/course-1/video.mp4';
+
+    // Unstaged key throws NotFoundException
+    await expect(storage.confirmUpload(key)).rejects.toThrow('Object does not exist in storage.');
+
+    // Staged key via createUploadUrl succeeds
+    await storage.createUploadUrl({
+      key,
+      contentType: 'video/mp4',
+      contentLength: 1024,
+    });
+    await expect(storage.confirmUpload(key)).resolves.toBeUndefined();
+  });
+
+  it('R2StorageService sends HeadObjectCommand and throws NotFoundException on 404 (BUG-T8-01)', async () => {
+    const storage = new R2StorageService(
+      new ConfigService({
+        R2_ENDPOINT: 'https://account.r2.cloudflarestorage.com',
+        R2_ACCESS_KEY_ID: 'access-key',
+        R2_SECRET_ACCESS_KEY: 'secret-key',
+        R2_BUCKET: 'xolvon-storage',
+      }),
+    );
+
+    // Mock S3Client.send on the instance
+    const client = (storage as unknown as { client: { send: jest.Mock } }).client;
+    client.send = jest.fn();
+
+    // Case 1: Object exists (HeadObject resolves)
+    client.send.mockResolvedValueOnce({});
+    await expect(storage.confirmUpload('private/projects/test.png')).resolves.toBeUndefined();
+    expect(client.send).toHaveBeenCalledTimes(1);
+
+    // Case 2: Object not found (HeadObject throws NotFound error)
+    const notFoundError = new Error('Not Found');
+    notFoundError.name = 'NotFound';
+    client.send.mockRejectedValueOnce(notFoundError);
+    await expect(storage.confirmUpload('private/projects/missing.png')).rejects.toThrow(
+      'Object does not exist in storage bucket.',
+    );
+
+    // Case 3: Other unexpected S3 error rethrows
+    client.send.mockRejectedValueOnce(new Error('S3 internal network failure'));
+    await expect(storage.confirmUpload('private/projects/err.png')).rejects.toThrow(
+      'S3 internal network failure',
+    );
+  });
 });
+

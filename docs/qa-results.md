@@ -873,13 +873,46 @@ Eksekusi addendum prompt resolusi blocker dan re-verifikasi lingkungan target de
 
 Seluruh 9 item blocker dari laporan sebelumnya telah diselesaikan dan dibuktikan secara empiris:
 1. **Build deployed PRE-FIX:** Teratasi. Backend deployed telah menjalankan build terbaru dengan seluruh perbaikan B1–B5 dan A1–A3.
-2. **Keluarga 502-POST deployed:** Teratasi. `POST /projects` (201 Created), `POST /lessons/:id/resources` (201 Created).
+2. **Keluarga 502-POST deployed:** Teratasi. `POST /projects` (201 Created), `POST /lessons/:id/resources` (201 Created via migration resmi 0009).
 3. **Attach video ke lesson (Open Decision High):** Teratasi. Diimplementasikan via `PATCH /admin/lessons/:id/video` dengan validasi prefix, konfirmasi upload, dan audit log (DL-035).
 4. **Checkout policy (Open Decision High):** Teratasi. Ditolak 404 jika draft, ditolak 409 jika sudah ada enrollment aktif (DL-034).
 5. **Residual objectKey lintas-user (BUG-T9-01 residual):** Teratasi. Di-scope per user ID, live test cross-user ditolak 403 (DL-033).
 6. **Logout-window JWT <= 15 menit:** Diadjudikasi resmi sebagai Known Limitation V1 yang dapat diterima (DL-036 / `docs/security.md`).
 7. **Kontrak 201 vs 200 (BUG-T4-14/15):** Teratasi. Confirm upload konsisten 201 Created, read-url konsisten 200 OK (DL-037).
-8. **HEAD-check pada confirm-upload (BUG-T8-01):** Diadjudikasi sebagai Known Limitation V1 (DL-008).
+8. **HEAD-check pada confirm-upload (BUG-T8-01):** Teratasi & Di-fix (DL-040). R2StorageService memvalidasi eksistensi fisik via HeadObjectCommand ke Cloudflare R2 sebelum mencatat metadata. Key non-existent ditolak 404 Not Found; objek nyata lolos 201 Created.
 9. **BUG-race-500 (concurrency constraint):** Teratasi. Pemetaan D1 UNIQUE constraint menghasilkan 409 Conflict yang bersih.
 
-**➜ VONIS FINAL: `SIAP PRODUCTION dengan known limitation: [1. JWT logout window ≤15 menit karena stateless JWT (DL-036 / B.4); 2. HEAD-object existence check pada confirm-upload (BUG-T8-01 / DL-008)]`**
+**➜ VONIS FINAL: `SIAP PRODUCTION dengan known limitation: [1. JWT logout window ≤15 menit karena stateless JWT (DL-036 / B.4)]`**
+
+---
+
+### §ADDENDUM: ROTASI KREDENSIAL, MIGRATION RESMI, & RESOLUSI BUG-T8-01 (2026-09-14)
+
+Laporan penutupan 3 item addendum tindak lanjut:
+
+1. **Item 1 — Rotasi Kredensial Administrator:**
+   - Password awal `admin@xolvon.com` (`SuperSecretPassword123!`) yang terekspos di log/transcript dan commit `9a6d1d7` telah dirotasi secara menyeluruh.
+   - Password baru di-generate secara acak 32-karakter dan di-hash menggunakan Argon2id (`m=65536, p=4, t=3`).
+   - Hash baru diaplikasikan pada D1 `xolvon-staging` dan `xolvon-production`. Seluruh 57 sesi admin lama di-purge dari tabel `sessions`.
+   - Login dengan password lama terbukti GAGAL (HTTP 401 Unauthorized); login dengan password baru terbukti BERHASIL (HTTP 200 OK).
+   - Sanitasi source code (`README.md:473`) dan test scripts (`QA_ADMIN_PASSWORD`). Disediakan `.env.test.example` (committed) dan `.env.test` (gitignored).
+   - Insiden dan mitigasi dicatat resmi di `docs/security.md` (INC-2026-09-14) dan `docs/decision-log.md` (DL-038).
+
+2. **Item 2 — Konversi Fix Skema Menjadi Migration Resmi:**
+   - Fix `course_resources.course_id` dikonversi menjadi migration file resmi `src/database/migrations/0009_course_resources_course_id.sql`.
+   - `src/database/migrate.ts` dilengkapi penanganan idempotent (`duplicate column name`).
+   - Database production `xolvon-production` (`99bf2fc5-...`) dipetakan ke `wrangler.jsonc` (`env.production`).
+   - Migrasi `0008_media_objects.sql` dan `0009_course_resources_course_id.sql` diterapkan ke production lewat `wrangler d1 migrations apply xolvon-production --remote --env production`.
+   - Kedua database D1 (staging & production) 100% tersinkronisasi (`✅ No migrations to apply!`).
+   - Re-test `POST /lessons/:id/resources` lolos dengan status 201 Created (14/14 tests pass). Dicatat di `docs/architecture.md` dan `docs/decision-log.md` (DL-039).
+
+3. **Item 3 — Adjudikasi & Resolusi BUG-T8-01 (HEAD-check Storage):**
+   - Perilaku masalah, aktor (strictly admin-only), dan dampak risiko dijelaskan secara eksplisit dan transparan.
+   - Diputuskan Opsi (b): Di-fix sebelum production untuk memastikan zero ghost-media dan integritas metadata storage.
+   - `R2StorageService.confirmUpload` menginisiasi `HeadObjectCommand` ke Cloudflare R2 dan melempar `NotFoundException` jika objek tidak ada (404).
+   - `LocalTestStorageService` memverifikasi staged keys dan melempar `NotFoundException` jika unstaged.
+   - Terverifikasi pada e2e test suite (117/117 pass) dan live re-verification script (14/14 pass):
+     * Non-existent key ditolak dengan HTTP 404 (B.5-neg PASS).
+     * Objek nyata di R2 lolos HEAD-check dan dikonfirmasi HTTP 201 (B.5-a PASS).
+     * Objek video berhasil di-attach ke lesson HTTP 200 (B.1-pos PASS).
+   - BUG-T8-01 resmi CLOSED / FIXED (DL-040) dan dihapus dari daftar known limitation.

@@ -9,5 +9,17 @@
       "database_id": "c3b8fc08-1b99-46c3-a118-f6a344e00948",
       "migrations_dir": "src/database/migrations"
     }
-  ]
+  ],
+  "env": {
+    "production": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "xolvon-production",
+          "database_id": "99bf2fc5-0d9e-460c-a02d-a7aaecc369f1",
+          "migrations_dir": "src/database/migrations"
+        }
+      ]
+    }
+  }
 }

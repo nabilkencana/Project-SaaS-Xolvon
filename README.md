@@ -470,7 +470,7 @@ In local mode (`DB_DRIVER=sqlite`), SQLite database migrations in `src/database/
 
 To seed the initial Administrator account:
 ```bash
-ADMIN_BOOTSTRAP_EMAIL="admin@xolvon.com" ADMIN_BOOTSTRAP_PASSWORD="SuperSecretPassword123!" npm run seed:admin
+ADMIN_BOOTSTRAP_EMAIL="admin@xolvon.com" ADMIN_BOOTSTRAP_PASSWORD="<STRONG_ADMIN_PASSWORD>" npm run seed:admin
 ```
 
 ### 4. Start Development Server

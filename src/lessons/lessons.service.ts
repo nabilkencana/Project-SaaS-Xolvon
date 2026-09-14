@@ -301,7 +301,6 @@ export class LessonsService {
       );
     }
 
-    const now = new Date().toISOString();
     await this.db.execute(
       `UPDATE lessons SET video_object_key = ? WHERE id = ?;`,
       [objectKey, lessonId],
