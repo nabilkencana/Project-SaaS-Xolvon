@@ -1402,7 +1402,7 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
     });
 
     it('rejects mass-assignment fields with 400 (forbidNonWhitelisted)', async () => {
-      const res = await request(app.getHttpServer())
+      await request(app.getHttpServer())
         .post('/api/courses')
         .set('Authorization', `Bearer ${await adminToken()}`)
         .send({

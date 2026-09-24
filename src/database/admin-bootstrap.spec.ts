@@ -28,7 +28,7 @@ describe('bootstrapAdmin', () => {
 
     expect(passwordService.hash).toHaveBeenCalledWith('controlled-password');
     expect(db.execute).toHaveBeenCalledWith(
-      expect.stringContaining("VALUES (?, ?, ?, ?, 'admin', 'active'"),
+      expect.stringContaining("VALUES (?, ?, ?, ?, ?, 'admin', 'active'"),
       expect.arrayContaining(['admin@example.com', '$argon2id$hashed']),
     );
   });

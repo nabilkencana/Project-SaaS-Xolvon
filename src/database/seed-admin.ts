@@ -8,6 +8,7 @@ import { bootstrapAdmin } from './admin-bootstrap';
 
 const email = process.env.ADMIN_BOOTSTRAP_EMAIL;
 const password = process.env.ADMIN_BOOTSTRAP_PASSWORD;
+const phone = process.env.ADMIN_BOOTSTRAP_PHONE;
 
 async function main(): Promise<void> {
   if (!email || !password) {
@@ -18,7 +19,7 @@ async function main(): Promise<void> {
   const db = app.get(DatabaseService);
   try {
     await runMigrations(db);
-    const result = await bootstrapAdmin(db, app.get(PasswordService), { email, password });
+    const result = await bootstrapAdmin(db, app.get(PasswordService), { email, password, phone });
     process.stdout.write(`Admin bootstrap ${result}.\n`);
   } finally {
     if (db instanceof DatabaseService) db.close();

@@ -130,11 +130,12 @@ export class D1Service implements OnModuleInit {
       // SQLite UNIQUE constraint violation: map to 409 ConflictException so
       // concurrent INSERT races (e.g. double-register) surface as a clean
       // conflict rather than leaking a 502 to the client (BUG-race-500).
-      const isUniqueConstraint = (body.errors ?? []).some((e) =>
-        (e.message ?? '').includes('UNIQUE constraint failed'),
-      );
-      if (isUniqueConstraint) {
+      const errorMsg = (body.errors ?? []).map((e) => e.message ?? '').join('; ');
+      if (errorMsg.includes('UNIQUE constraint failed')) {
         throw new ConflictException('UNIQUE constraint failed.');
+      }
+      if (errorMsg.includes('duplicate column name')) {
+        throw new Error(`duplicate column name: ${errorMsg}`);
       }
 
       this.logger.error('D1 API error response', {

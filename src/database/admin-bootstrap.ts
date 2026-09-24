@@ -8,6 +8,7 @@ export type AdminBootstrapResult = 'created' | 'already_exists';
 export interface AdminBootstrapInput {
   email: string;
   password: string;
+  phone?: string;
 }
 
 export async function bootstrapAdmin(
@@ -31,14 +32,18 @@ export async function bootstrapAdmin(
     return 'already_exists';
   }
 
+  const phone =
+    input.phone?.trim() ||
+    `0812${Math.floor(10000000 + Math.random() * 90000000)}`;
+
   const passwordHash = await passwordService.hash(input.password);
   try {
     await db.execute(
       `INSERT INTO users (
-        id, name, email, password_hash, role, status,
+        id, name, email, phone, password_hash, role, status,
         email_verified, phone_verified, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, 'admin', 'active', 0, 0, ?, ?)`,
-      [randomUUID(), 'Admin', email, passwordHash, new Date().toISOString(), new Date().toISOString()],
+      ) VALUES (?, ?, ?, ?, ?, 'admin', 'active', 0, 0, ?, ?)`,
+      [randomUUID(), 'Admin', email, phone, passwordHash, new Date().toISOString(), new Date().toISOString()],
     );
     return 'created';
   } catch (error) {
