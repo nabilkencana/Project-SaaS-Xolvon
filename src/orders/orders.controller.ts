@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -53,6 +54,35 @@ export class OrdersController {
     @Body() dto: CreateOrderDto,
   ): Promise<OrderResponseDto> {
     return this.ordersService.checkout(userId, dto);
+  }
+
+  /**
+   * User: List own orders with items and status (anti-IDOR, derived from JWT sub).
+   */
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'List own orders (student)' })
+  @ApiOkResponse({ type: [OrderResponseDto] })
+  @Get('me')
+  async getMyOrders(
+    @CurrentUser('sub') userId: string,
+  ): Promise<OrderResponseDto[]> {
+    return this.ordersService.getMyOrders(userId);
+  }
+
+  /**
+   * User: Get own order details by id (anti-IDOR, enforces ownership).
+   */
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth(OPENAPI_BEARER_SCHEME)
+  @ApiOperation({ summary: 'Get own order by id (student)' })
+  @ApiOkResponse({ type: OrderResponseDto })
+  @Get(':id')
+  async getMyOrderById(
+    @CurrentUser('sub') userId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) orderId: string,
+  ): Promise<OrderResponseDto> {
+    return this.ordersService.getMyOrderById(userId, orderId);
   }
 
   /**

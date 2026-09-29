@@ -450,6 +450,70 @@ export class OrdersService {
     );
   }
 
+  /**
+   * User: Lists orders belonging to the authenticated user.
+   * Orders are sorted created_at DESC, id DESC. Includes order items.
+   */
+  async getMyOrders(userId: string): Promise<OrderResponseDto[]> {
+    const orders = await this.db.queryAll<OrderRow>(
+      'SELECT id, user_id, status, amount, notes, verified_by, verified_at, created_at, updated_at ' +
+        'FROM orders WHERE user_id = ? ORDER BY created_at DESC, id DESC;',
+      [userId],
+    );
+
+    if (orders.length === 0) {
+      return [];
+    }
+
+    const orderIds = orders.map((o) => o.id);
+    const placeholders = orderIds.map(() => '?').join(', ');
+    const items = await this.db.queryAll<OrderItemRow>(
+      `SELECT id, order_id, course_id, price, created_at FROM order_items WHERE order_id IN (${placeholders});`,
+      orderIds,
+    );
+
+    const itemsByOrder = new Map<string, OrderItemRow[]>();
+    for (const item of items) {
+      const list = itemsByOrder.get(item.order_id) ?? [];
+      list.push(item);
+      itemsByOrder.set(item.order_id, list);
+    }
+
+    return orders.map((order) =>
+      toOrderResponse(order, itemsByOrder.get(order.id) ?? []),
+    );
+  }
+
+  /**
+   * User: Retrieves a single order belonging to the authenticated user.
+   * Enforces user ownership check to prevent IDOR vulnerabilities.
+   */
+  async getMyOrderById(
+    userId: string,
+    orderId: string,
+  ): Promise<OrderResponseDto> {
+    const order = await this.db.queryOne<OrderRow>(
+      'SELECT id, user_id, status, amount, notes, verified_by, verified_at, created_at, updated_at ' +
+        'FROM orders WHERE id = ? LIMIT 1;',
+      [orderId],
+    );
+
+    if (!order) {
+      throw new NotFoundException('Order tidak ditemukan.');
+    }
+
+    if (order.user_id !== userId) {
+      throw new ForbiddenException('Anda tidak memiliki akses ke order ini.');
+    }
+
+    const items = await this.db.queryAll<OrderItemRow>(
+      'SELECT id, order_id, course_id, price, created_at FROM order_items WHERE order_id = ?;',
+      [orderId],
+    );
+
+    return toOrderResponse(order, items);
+  }
+
   /** Key extension derived from the declared proof MIME type. */
   private static readonly PROOF_EXTENSIONS: Record<string, string> = {
     'image/jpeg': 'jpg',

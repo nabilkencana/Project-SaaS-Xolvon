@@ -707,4 +707,104 @@ describe('OrdersService', () => {
       expect(mockAuditService.record).not.toHaveBeenCalled();
     });
   });
+
+  describe('getMyOrders', () => {
+    it('returns empty array if user has no orders', async () => {
+      mockDb.queryAll.mockResolvedValueOnce([]);
+
+      const result = await service.getMyOrders('user-1');
+
+      expect(result).toEqual([]);
+      expect(mockDb.queryAll).toHaveBeenCalledWith(
+        expect.stringContaining('FROM orders WHERE user_id = ?'),
+        ['user-1'],
+      );
+    });
+
+    it('returns orders with items mapped correctly', async () => {
+      mockDb.queryAll
+        .mockResolvedValueOnce([
+          {
+            id: 'ord-1',
+            user_id: 'user-1',
+            status: 'pending',
+            amount: 100000,
+            notes: 'Test note',
+            verified_by: null,
+            verified_at: null,
+            created_at: '2026-09-01T00:00:00.000Z',
+            updated_at: '2026-09-01T00:00:00.000Z',
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'item-1',
+            order_id: 'ord-1',
+            course_id: 'course-1',
+            price: 100000,
+            created_at: '2026-09-01T00:00:00.000Z',
+          },
+        ]);
+
+      const result = await service.getMyOrders('user-1');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('ord-1');
+      expect(result[0].status).toBe('pending');
+      expect(result[0].items).toHaveLength(1);
+      expect(result[0].items[0].courseId).toBe('course-1');
+    });
+  });
+
+  describe('getMyOrderById', () => {
+    it('throws NotFoundException if order does not exist', async () => {
+      mockDb.queryOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.getMyOrderById('user-1', 'nonexistent'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws ForbiddenException if order belongs to another user (anti-IDOR)', async () => {
+      mockDb.queryOne.mockResolvedValueOnce({
+        id: 'ord-1',
+        user_id: 'other-user',
+        status: 'pending',
+      });
+
+      await expect(service.getMyOrderById('user-1', 'ord-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('returns the order and its items when authorized', async () => {
+      mockDb.queryOne.mockResolvedValueOnce({
+        id: 'ord-1',
+        user_id: 'user-1',
+        status: 'paid',
+        amount: 200000,
+        notes: '',
+        verified_by: 'admin-1',
+        verified_at: '2026-09-02T00:00:00.000Z',
+        created_at: '2026-09-01T00:00:00.000Z',
+        updated_at: '2026-09-02T00:00:00.000Z',
+      });
+      mockDb.queryAll.mockResolvedValueOnce([
+        {
+          id: 'item-1',
+          order_id: 'ord-1',
+          course_id: 'course-1',
+          price: 200000,
+          created_at: '2026-09-01T00:00:00.000Z',
+        },
+      ]);
+
+      const result = await service.getMyOrderById('user-1', 'ord-1');
+
+      expect(result.id).toBe('ord-1');
+      expect(result.status).toBe('paid');
+      expect(result.verifiedAt).toBe('2026-09-02T00:00:00.000Z');
+      expect(result.items).toHaveLength(1);
+    });
+  });
 });

@@ -12,6 +12,8 @@ describe('OrdersController', () => {
   beforeEach(() => {
     mockOrdersService = {
       checkout: jest.fn(),
+      getMyOrders: jest.fn(),
+      getMyOrderById: jest.fn(),
       submitPaymentProof: jest.fn(),
       paymentProofUrl: jest.fn(),
       verifyOrder: jest.fn(),
@@ -20,6 +22,51 @@ describe('OrdersController', () => {
     } as unknown as jest.Mocked<OrdersService>;
 
     controller = new OrdersController(mockOrdersService);
+  });
+
+  it('should call getMyOrders on service', async () => {
+    const mockOrders = [
+      new OrderResponseDto({
+        id: 'ord-1',
+        status: 'pending',
+        amount: 100000,
+        notes: '',
+        items: [],
+        createdAt: '2026-09-04T00:00:00.000Z',
+        updatedAt: '2026-09-04T00:00:00.000Z',
+        verifiedAt: null,
+      }),
+    ];
+
+    mockOrdersService.getMyOrders.mockResolvedValueOnce(mockOrders);
+
+    const result = await controller.getMyOrders('user-1');
+
+    expect(result).toBe(mockOrders);
+    expect(mockOrdersService.getMyOrders).toHaveBeenCalledWith('user-1');
+  });
+
+  it('should call getMyOrderById on service', async () => {
+    const mockOrder = new OrderResponseDto({
+      id: 'ord-1',
+      status: 'pending',
+      amount: 100000,
+      notes: '',
+      items: [],
+      createdAt: '2026-09-04T00:00:00.000Z',
+      updatedAt: '2026-09-04T00:00:00.000Z',
+      verifiedAt: null,
+    });
+
+    mockOrdersService.getMyOrderById.mockResolvedValueOnce(mockOrder);
+
+    const result = await controller.getMyOrderById('user-1', 'ord-1');
+
+    expect(result).toBe(mockOrder);
+    expect(mockOrdersService.getMyOrderById).toHaveBeenCalledWith(
+      'user-1',
+      'ord-1',
+    );
   });
 
   it('should call checkout on service', async () => {

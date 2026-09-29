@@ -1037,6 +1037,79 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
         .expect(400);
       expect(dbExecute).not.toHaveBeenCalled();
     });
+
+    it('GET /api/orders/me lists user orders without leaking foreign orders (anti-IDOR)', async () => {
+      dbQueryAll
+        .mockResolvedValueOnce([
+          {
+            id: orderId,
+            user_id: 'user-uuid-1',
+            status: 'pending',
+            amount: 250000,
+            notes: 'Test order',
+            verified_by: null,
+            verified_at: null,
+            created_at: '2026-09-10T00:00:00.000Z',
+            updated_at: '2026-09-10T00:00:00.000Z',
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'item-uuid-1',
+            order_id: orderId,
+            course_id: '0b9e6b5e-1111-4222-8333-444455556666',
+            price: 250000,
+            created_at: '2026-09-10T00:00:00.000Z',
+          },
+        ]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/orders/me')
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].id).toBe(orderId);
+      expect(res.body[0].status).toBe('pending');
+      expect(res.body[0].items).toHaveLength(1);
+    });
+
+    it('GET /api/orders/:id returns own order with items', async () => {
+      dbQueryOne.mockResolvedValueOnce({
+        id: orderId,
+        user_id: 'user-uuid-1',
+        status: 'pending',
+        amount: 250000,
+        notes: '',
+        verified_by: null,
+        verified_at: null,
+        created_at: '2026-09-10T00:00:00.000Z',
+        updated_at: '2026-09-10T00:00:00.000Z',
+      });
+      dbQueryAll.mockResolvedValueOnce([]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/orders/${orderId}`)
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .expect(200);
+
+      expect(res.body.id).toBe(orderId);
+      expect(res.body.status).toBe('pending');
+    });
+
+    it('GET /api/orders/:id rejects foreign order with 403', async () => {
+      dbQueryOne.mockResolvedValueOnce({
+        id: orderId,
+        user_id: 'foreign-user-uuid',
+        status: 'pending',
+      });
+
+      await request(app.getHttpServer())
+        .get(`/api/orders/${orderId}`)
+        .set('Authorization', `Bearer ${await userToken()}`)
+        .expect(403);
+    });
   });
 
   describe('marketplace showcase (public catalog + admin CRUD)', () => {
