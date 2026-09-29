@@ -1106,6 +1106,7 @@ Fields:
 Email
 Phone Number
 Password
+Name (Optional)
 ```
 
 Public registration hanya menghasilkan role:
@@ -1874,6 +1875,10 @@ Error Counts
 Failed Uploads
 ```
 
+Catatan Arsitektur V1:
+- Metrik Operasional Database disediakan langsung oleh Backend via endpoint `GET /api/admin/overview` (sesuai HANDBOOK §5.4): `userCount` (Registered Users), `pendingOrders` (Pending Activations), dan `activeEnrollments` (Active Enrollments).
+- Metrik Interaksi Produk (Course Views, CTA Clicks, Portfolio/Marketplace Views, Checkout Starts) serta observability logs (Error Counts, Failed Uploads) dialokasikan ke client-side telemetry / third-party analytics provider (sesuai Open Decision §91.12).
+
 Analytics bertujuan membantu operasi dan conversion, bukan surveillance berlebihan.
 
 ---
@@ -2354,7 +2359,7 @@ Flow sudah ditentukan, mekanisme/provider belum.
 
 ### 91.6 Payment Proof
 
-Belum diputuskan apakah screenshot/proof disimpan sistem.
+LOCKED (DL-006, Konflik K-05): Tabel payment_proofs dan alur POST /orders/:id/payment-proof diratifikasi menyimpan object key di storage aman.
 
 ### 91.7 Assignment Submission
 
@@ -2362,7 +2367,7 @@ Belum final apakah assignment hanya resource atau memiliki submission workflow.
 
 ### 91.8 Admin Bootstrap
 
-Mekanisme membuat admin pertama belum final.
+LOCKED (DL-005, DL-017): Mekanisme bootstrap admin menggunakan perintah terkontrol `npm run seed:admin` dengan env ADMIN_BOOTSTRAP_EMAIL/PASSWORD.
 
 ### 91.9 Legal Copy
 

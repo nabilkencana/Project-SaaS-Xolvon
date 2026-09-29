@@ -1875,6 +1875,10 @@ Error Counts
 Failed Uploads
 ```
 
+Catatan Arsitektur V1:
+- Metrik Operasional Database disediakan langsung oleh Backend via endpoint `GET /api/admin/overview` (sesuai HANDBOOK §5.4): `userCount` (Registered Users), `pendingOrders` (Pending Activations), dan `activeEnrollments` (Active Enrollments).
+- Metrik Interaksi Produk (Course Views, CTA Clicks, Portfolio/Marketplace Views, Checkout Starts) serta observability logs (Error Counts, Failed Uploads) dialokasikan ke client-side telemetry / third-party analytics provider (sesuai Open Decision §91.12).
+
 Analytics bertujuan membantu operasi dan conversion, bukan surveillance berlebihan.
 
 ---
