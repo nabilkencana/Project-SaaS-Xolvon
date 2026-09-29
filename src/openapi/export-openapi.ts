@@ -15,7 +15,6 @@
 import { NestFactory } from '@nestjs/core';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AppModule } from '../app.module';
 import { createOpenApiDocument } from './openapi.config';
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
@@ -78,6 +77,8 @@ async function main(): Promise<void> {
     'docs-openapi-export-only-not-a-real-secret-0123456789';
   process.env['FRONTEND_URL'] ??= 'http://localhost:3001';
 
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { AppModule } = require('../app.module');
   const app = await NestFactory.create(AppModule, { logger: false });
   try {
     app.setGlobalPrefix('api');

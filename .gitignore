@@ -62,6 +62,10 @@ tmp/
 # Cloudflare & Wrangler local state
 .wrangler/
 
+# Postman desktop local workspace state
+postman/.postman/
+postman/postman/
+
 # Local SQLite database (DB_DRIVER=sqlite)
 local.db
 local.db-journal

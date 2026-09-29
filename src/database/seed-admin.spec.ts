@@ -22,7 +22,7 @@ import {
  * driver guard must refuse BEFORE anything can touch a remote database.
  */
 const REPO_ROOT = resolve(process.cwd());
-const TS_NODE = join(REPO_ROOT, 'node_modules', '.bin', 'ts-node');
+const TS_NODE_BIN = require.resolve('ts-node/dist/bin.js');
 const SEED_SCRIPT = join(REPO_ROOT, 'src', 'database', 'seed-admin.ts');
 
 interface SeedRun {
@@ -50,8 +50,8 @@ async function runSeed(
   const cwd = opts?.cwd ?? mkdtempSync(join(tmpdir(), 'qa-t16-seed-'));
   return new Promise((done) => {
     execFile(
-      TS_NODE,
-      [SEED_SCRIPT],
+      process.execPath,
+      [TS_NODE_BIN, SEED_SCRIPT],
       {
         cwd,
         env: { ...env, TS_NODE_PROJECT: join(REPO_ROOT, 'tsconfig.json') },
