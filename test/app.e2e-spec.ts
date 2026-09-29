@@ -217,11 +217,31 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
       expect(Array.isArray(res.body.message)).toBe(true);
       expect(res.body.message).toEqual(
         expect.arrayContaining([
-          'Name is required.',
           'A valid email address is required.',
+          'Phone number is required.',
+          'Password must be at least 8 characters long.',
         ]),
       );
       expectDbUnused();
+    });
+
+    it('successfully creates a user without name (optional name per PRD §38)', async () => {
+      dbQueryOne.mockResolvedValueOnce(undefined);
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/register')
+        .send({
+          email: 'no-name@example.com',
+          phone: '+62812345679',
+          password: 'SuperSecret123',
+        })
+        .expect(201);
+
+      expect(res.body).toMatchObject({
+        name: '',
+        email: 'no-name@example.com',
+        role: 'user',
+      });
     });
 
     it('rejects unknown (non-whitelisted) properties with 400', async () => {
