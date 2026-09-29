@@ -1,7 +1,8 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEmail,
   IsNotEmpty,
+  IsOptional,
   IsString,
   Matches,
   MaxLength,
@@ -10,12 +11,12 @@ import {
 import { Transform } from 'class-transformer';
 
 export class RegisterDto {
-  @ApiProperty({ description: 'Display name, max 100 characters.', maxLength: 100 })
+  @ApiPropertyOptional({ description: 'Display name, max 100 characters.', maxLength: 100 })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty({ message: 'Name is required.' })
   @MaxLength(100, { message: 'Name must not exceed 100 characters.' })
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-  name: string;
+  name?: string;
 
   @ApiProperty({ description: 'Email address, trimmed and lowercased.', example: 'user@example.com' })
   @IsEmail({}, { message: 'A valid email address is required.' })

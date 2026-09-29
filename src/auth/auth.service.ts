@@ -62,7 +62,7 @@ export class AuthService {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         [
           id,
-          dto.name,
+          dto.name ?? '',
           dto.email,
           dto.phone,
           passwordHash,
@@ -91,7 +91,7 @@ export class AuthService {
 
     return toSafeUser({
       id,
-      name: dto.name,
+      name: dto.name ?? '',
       email: dto.email,
       phone: dto.phone,
       password_hash: passwordHash,
