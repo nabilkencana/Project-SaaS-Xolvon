@@ -738,12 +738,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/auth/login",
+              "raw": "{{baseUrl}}/auth/admin/login",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "auth",
+                "admin",
                 "login"
               ]
             },
@@ -793,7 +794,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"_note\": \"Successful response for POST /auth/login (asserted: HTTP 200, field \\\"accessToken\\\" present). See docs/openapi.json for the full schema.\"\n}"
+              "body": "{\n  \"_note\": \"Successful response for POST /auth/admin/login (asserted: HTTP 200, field \\\"accessToken\\\" present). See docs/openapi.json for the full schema.\"\n}"
             },
             {
               "name": "401 Unauthorized",
@@ -806,7 +807,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"statusCode\": 401,\n  \"message\": \"Invalid email or password.\",\n  \"error\": \"Unauthorized\",\n  \"path\": \"/api/auth/login\",\n  \"timestamp\": \"2026-01-01T00:00:00.000Z\"\n}"
+              "body": "{\n  \"statusCode\": 401,\n  \"message\": \"Invalid email or password.\",\n  \"error\": \"Unauthorized\",\n  \"path\": \"/api/auth/admin/login\",\n  \"timestamp\": \"2026-01-01T00:00:00.000Z\"\n}"
             },
             {
               "name": "429 TOO_MANY_REQUESTS",
@@ -819,7 +820,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"statusCode\": 429,\n  \"message\": \"ThrottlerException: Too Many Requests\",\n  \"error\": \"TOO_MANY_REQUESTS\",\n  \"path\": \"/api/auth/login\",\n  \"timestamp\": \"2026-01-01T00:00:00.000Z\"\n}"
+              "body": "{\n  \"statusCode\": 429,\n  \"message\": \"ThrottlerException: Too Many Requests\",\n  \"error\": \"TOO_MANY_REQUESTS\",\n  \"path\": \"/api/auth/admin/login\",\n  \"timestamp\": \"2026-01-01T00:00:00.000Z\"\n}"
             }
           ]
         },

@@ -1,4 +1,8 @@
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'node:crypto';
 import { AuthService } from './auth.service';
@@ -293,6 +297,53 @@ describe('AuthService', () => {
       expect(result.user).not.toHaveProperty('password_hash');
       expect((result.user as any).password_hash).toBeUndefined();
       expect(result.user.email).toBe(sampleUserRow.email);
+    });
+  });
+
+  describe('adminLogin', () => {
+    const adminLoginDto = {
+      email: 'admin@example.com',
+      password: 'AdminPassword123!',
+    };
+
+    it('should throw UnauthorizedException if admin user is not found', async () => {
+      mockDb.queryOne.mockResolvedValueOnce(undefined);
+
+      await expect(service.adminLogin(adminLoginDto)).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('should throw ForbiddenException if user exists and password is valid but role is not admin', async () => {
+      mockDb.queryOne.mockResolvedValueOnce({
+        ...sampleUserRow,
+        role: 'user',
+      });
+      mockPasswordService.verify.mockResolvedValueOnce(true);
+
+      await expect(service.adminLogin(adminLoginDto)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('should successfully log in admin user and issue tokens with role admin', async () => {
+      const adminUserRow: UserRow = {
+        ...sampleUserRow,
+        email: 'admin@example.com',
+        role: 'admin',
+      };
+      mockDb.queryOne.mockResolvedValueOnce(adminUserRow);
+      mockPasswordService.verify.mockResolvedValueOnce(true);
+      mockJwtService.signAsync.mockResolvedValueOnce('mocked.admin.jwt.token');
+
+      const result = await service.adminLogin(adminLoginDto);
+
+      expect(result.accessToken).toBe('mocked.admin.jwt.token');
+      expect(result.user.role).toBe('admin');
+      expect(mockDb.execute).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO sessions'),
+        expect.anything(),
+      );
     });
   });
 

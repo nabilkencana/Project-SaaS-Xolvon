@@ -59,6 +59,7 @@ const REQUIRED_OPERATIONS: ReadonlyArray<[string, string]> = [
   ['get', '/api'],
   ['post', '/api/auth/register'],
   ['post', '/api/auth/login'],
+  ['post', '/api/auth/admin/login'],
   ['post', '/api/auth/refresh'],
   ['post', '/api/auth/logout'],
   ['get', '/api/auth/me'],

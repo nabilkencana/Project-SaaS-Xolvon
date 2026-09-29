@@ -76,6 +76,28 @@ export class AuthController {
     return this.authService.login(dto, ipAddress, userAgent);
   }
 
+  // 5 req/min per IP — DL-012 brute-force protection (PRD §40 dedicated admin login).
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @ApiOperation({ summary: 'Admin login with email and password (PRD §40)' })
+  @ApiOkResponse({ type: AuthResponseDto })
+  @Post('admin/login')
+  @HttpCode(HttpStatus.OK)
+  async adminLogin(
+    @Body() dto: LoginDto,
+    @Req() req: Request,
+  ): Promise<AuthResponseDto> {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ipAddress =
+      typeof forwarded === 'string'
+        ? forwarded.split(',')[0].trim()
+        : req.ip ?? undefined;
+
+    const userAgent = req.headers['user-agent'] ?? undefined;
+
+    return this.authService.adminLogin(dto, ipAddress, userAgent);
+  }
+
   // 5 req/min per IP — BUG-throttle-refresh-logout: refresh previously ran at
   // the global 100/min, giving token-guessing 20x the login budget.
   @Public()

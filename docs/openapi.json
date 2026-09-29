@@ -80,6 +80,38 @@
         ]
       }
     },
+    "/api/auth/admin/login": {
+      "post": {
+        "operationId": "AuthController_adminLogin",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Admin login with email and password (PRD §40)",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/auth/refresh": {
       "post": {
         "operationId": "AuthController_refresh",

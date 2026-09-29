@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -153,6 +154,86 @@ export class AuthService {
     const hashedRefreshToken = this.hashToken(rawRefreshToken);
 
     // Session lifetime: 7 days
+    const expiresAt = new Date(
+      Date.now() + 7 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const sessionId = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+
+    await this.db.execute(
+      `INSERT INTO sessions (
+        id, user_id, refresh_token, expires_at, ip_address, user_agent, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?);`,
+      [
+        sessionId,
+        user.id,
+        hashedRefreshToken,
+        expiresAt,
+        ipAddress ?? null,
+        userAgent ?? null,
+        createdAt,
+      ],
+    );
+
+    return {
+      accessToken,
+      refreshToken: rawRefreshToken,
+      user: toSafeUser(user),
+    };
+  }
+
+  /**
+   * Authenticates admin credentials (PRD §40). Enforces server-side role check:
+   * verifies credentials and strictly ensures user.role === 'admin'.
+   * If credentials are valid but role is not 'admin', access is rejected with 403.
+   */
+  async adminLogin(
+    dto: LoginDto,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<AuthResponseDto> {
+    const user = await this.db.queryOne<UserRow>(
+      'SELECT * FROM users WHERE email = ? LIMIT 1;',
+      [dto.email],
+    );
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid email or password.');
+    }
+
+    if (user.status === 'suspended') {
+      throw new UnauthorizedException(
+        'Account is suspended. Please contact support.',
+      );
+    }
+
+    const isPasswordValid = await this.passwordService.verify(
+      user.password_hash,
+      dto.password,
+    );
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid email or password.');
+    }
+
+    if (user.role !== 'admin') {
+      throw new ForbiddenException(
+        'Akses ditolak: Hanya admin yang dapat login di sini.',
+      );
+    }
+
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    };
+    const accessToken = await this.jwtService.signAsync(payload, {
+      expiresIn: '15m',
+    });
+
+    const rawRefreshToken = crypto.randomBytes(32).toString('hex');
+    const hashedRefreshToken = this.hashToken(rawRefreshToken);
+
     const expiresAt = new Date(
       Date.now() + 7 * 24 * 60 * 60 * 1000,
     ).toISOString();

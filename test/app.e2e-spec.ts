@@ -322,6 +322,73 @@ describe('Backend API (e2e, deterministic — no Cloudflare access)', () => {
     });
   });
 
+  describe('POST /api/auth/admin/login', () => {
+    const adminLoginPayload = {
+      email: 'e2e.admin@example.com',
+      password: 'AdminSuperSecret123!',
+    };
+
+    const adminRow = {
+      id: 'admin-uuid-1',
+      name: 'E2E Admin',
+      email: 'e2e.admin@example.com',
+      phone: '+62812345679',
+      password_hash: 'hashed-password',
+      role: 'admin',
+      status: 'active',
+      email_verified: 1,
+      phone_verified: 1,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    it('rejects with 403 if credentials are valid but user is not admin (PRD §40)', async () => {
+      const nonAdminRow = { ...adminRow, role: 'user' };
+      dbQueryOne.mockResolvedValueOnce(nonAdminRow);
+      passwordMock.verify.mockResolvedValueOnce(true);
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/admin/login')
+        .send(adminLoginPayload)
+        .expect(403);
+
+      expect(res.body.message).toContain('Hanya admin');
+    });
+
+    it('returns tokens and admin profile when user is admin', async () => {
+      dbQueryOne.mockResolvedValueOnce(adminRow);
+      passwordMock.verify.mockResolvedValueOnce(true);
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/admin/login')
+        .send(adminLoginPayload)
+        .expect(200);
+
+      expect(typeof res.body.accessToken).toBe('string');
+      expect(res.body.refreshToken).toMatch(/^[0-9a-f]{64}$/);
+      expect(res.body.user).toMatchObject({
+        id: 'admin-uuid-1',
+        role: 'admin',
+      });
+      expect(JSON.stringify(res.body)).not.toContain('hashed-password');
+
+      expect(dbExecute).toHaveBeenCalledTimes(1);
+      const [sessionSql] = dbExecute.mock.calls[0];
+      expect(sessionSql).toContain('INSERT INTO sessions');
+    });
+
+    it('returns 401 for unknown email', async () => {
+      dbQueryOne.mockResolvedValueOnce(undefined);
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/admin/login')
+        .send({ email: 'unknown@example.com', password: 'pass' })
+        .expect(401);
+
+      expect(res.body.message).toBe('Invalid email or password.');
+    });
+  });
+
   describe('GET /api/auth/me (protected)', () => {
     const payload: JwtPayload = {
       sub: 'user-uuid-1',

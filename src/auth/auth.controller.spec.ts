@@ -124,6 +124,51 @@ describe('AuthController', () => {
     );
   });
 
+  it('adminLogin should extract ip and user-agent and delegate to authService.adminLogin', async () => {
+    const loginDto = {
+      email: 'admin@example.com',
+      password: 'password123',
+    };
+
+    const mockReq = {
+      ip: '192.168.1.1',
+      headers: {
+        'user-agent': 'JestTestRunner',
+        'x-forwarded-for': '203.0.113.195, 70.41.3.18',
+      },
+    } as unknown as Request;
+
+    const mockAuthResponse = {
+      accessToken: 'admin.access.token',
+      refreshToken: 'admin.refresh.token',
+      user: {
+        id: 'uuid-admin',
+        name: 'Admin',
+        email: 'admin@example.com',
+        phone: '+628123456789',
+        role: 'admin' as const,
+        status: 'active' as const,
+        email_verified: true,
+        phone_verified: true,
+        created_at: '2026-09-04T00:00:00.000Z',
+        updated_at: '2026-09-04T00:00:00.000Z',
+      },
+    };
+
+    (mockAuthService as any).adminLogin = jest
+      .fn()
+      .mockResolvedValueOnce(mockAuthResponse);
+
+    const result = await controller.adminLogin(loginDto, mockReq);
+
+    expect(result).toBe(mockAuthResponse);
+    expect((mockAuthService as any).adminLogin).toHaveBeenCalledWith(
+      loginDto,
+      '203.0.113.195',
+      'JestTestRunner',
+    );
+  });
+
   it('refresh should delegate to authService.refresh', async () => {
     mockAuthService.refresh.mockResolvedValueOnce({
       accessToken: 'new.access.token',
