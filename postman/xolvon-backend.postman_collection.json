@@ -132,6 +132,11 @@
       "key": "smokeEmail",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "paymentProofObjectKey",
+      "value": "private/users/00000000-0000-4000-8000-000000000000/proofs/00000000-0000-4000-8000-000000000000.webp",
+      "type": "string"
     }
   ],
   "item": [
@@ -4762,6 +4767,175 @@
           ]
         },
         {
+          "name": "List my orders (student)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "orders",
+                "me"
+              ]
+            },
+            "description": "List authenticated student own orders with status (pending, paid, cancelled) and items (PRD §36 & RULES §45)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"List my orders → HTTP 200\", function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Response is an array\", function () {",
+                  "  pm.expect(Array.isArray(pm.response.json())).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Success 200",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "[\n  {\n    \"id\": \"ord-1\",\n    \"status\": \"pending\",\n    \"amount\": 150000,\n    \"notes\": \"Pembayaran transfer\",\n    \"items\": [],\n    \"createdAt\": \"2026-09-01T00:00:00.000Z\",\n    \"updatedAt\": \"2026-09-01T00:00:00.000Z\",\n    \"verifiedAt\": null\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Get my order by ID (student)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{orderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "orders",
+                "{{orderId}}"
+              ]
+            },
+            "description": "Get details of an own order by ID. Enforces anti-IDOR ownership check."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Get my order by ID → HTTP 200\", function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Body has id and status\", function () {",
+                  "  var json = pm.response.json();",
+                  "  pm.expect(json).to.have.property(\"id\");",
+                  "  pm.expect(json).to.have.property(\"status\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Success 200",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": \"ord-1\",\n  \"status\": \"pending\",\n  \"amount\": 150000,\n  \"notes\": \"Pembayaran transfer\",\n  \"items\": [],\n  \"createdAt\": \"2026-09-01T00:00:00.000Z\",\n  \"updatedAt\": \"2026-09-01T00:00:00.000Z\",\n  \"verifiedAt\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Mint payment proof upload URL (owner)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{orderId}}/payment-proof-url",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "orders",
+                "{{orderId}}",
+                "payment-proof-url"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contentType\": \"image/webp\",\n  \"size\": 102400\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Mint a presigned PUT upload URL for an own pending order receipt (RULES §51 scoped to private/users/{userId}/proofs/)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Mint payment proof URL → HTTP 201\", function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "var json = pm.response.json();",
+                  "pm.test(\"Body has key and uploadUrl\", function () {",
+                  "  pm.expect(json).to.have.property(\"key\");",
+                  "  pm.expect(json).to.have.property(\"uploadUrl\");",
+                  "});",
+                  "if (json && json.key) {",
+                  "  pm.collectionVariables.set(\"paymentProofObjectKey\", json.key);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Success 201",
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"key\": \"private/users/user-1/proofs/6f1c9a44-77a5-4a1e-9d12-5f2a6b1c0d3e.webp\",\n  \"uploadUrl\": \"https://example.r2.cloudflarestorage.com/...\",\n  \"expiresIn\": 3600\n}"
+            }
+          ]
+        },
+        {
           "name": "Submit payment proof (owner)",
           "request": {
             "method": "POST",
@@ -4784,14 +4958,14 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"objectKey\": \"private/orders/00000000-0000-4000-8000-000000000000/payment-proof.webp\"\n}",
+              "raw": "{\n  \"objectKey\": \"{{paymentProofObjectKey}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "Upload the receipt via 09 upload-url → PUT → confirm first, then submit its key. Anti-IDOR: only the order owner."
+            "description": "Submit payment proof object key (minted via payment-proof-url). Anti-IDOR: only the order owner."
           },
           "event": [
             {
