@@ -137,6 +137,11 @@
       "key": "paymentProofObjectKey",
       "value": "private/users/00000000-0000-4000-8000-000000000000/proofs/00000000-0000-4000-8000-000000000000.webp",
       "type": "string"
+    },
+    {
+      "key": "lessonVideoObjectKey",
+      "value": "private/courses/0b9e6b5e-1111-4222-8333-444455556666/lessons/7c9e6679-7425-40de-944b-e07fc1f90ae7/video/lesson.mp4",
+      "type": "string"
     }
   ],
   "item": [
@@ -383,7 +388,7 @@
                 }
               }
             },
-            "description": "Public registration always yields role `user` — role is never accepted from input (DL-005). Conflict check is WHERE email OR phone — the pre-request randomizes the phone so reruns do not collide on it; re-registering the SAME {{email}} still 409s by design.",
+            "description": "Public registration yields role user (DL-005). Field \"name\" is optional per PRD §38 (defaults to empty string if omitted). Conflict check is WHERE email OR phone — pre-request randomizes phone so reruns do not collide.",
             "auth": {
               "type": "noauth"
             }
@@ -2495,6 +2500,106 @@
                 }
               ],
               "body": "{\n  \"statusCode\": 404,\n  \"message\": \"Resource tidak ditemukan.\",\n  \"error\": \"Not Found\",\n  \"path\": \"/api/resources/{{resourceId}}\",\n  \"timestamp\": \"2026-01-01T00:00:00.000Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Attach video to lesson (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lessons/{{lessonId}}/video",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lessons",
+                "{{lessonId}}",
+                "video"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"objectKey\": \"{{lessonVideoObjectKey}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Attaches a confirmed video objectKey from R2/S3 storage to the specified lesson (admin only)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Attach video to lesson (admin) -> HTTP 200\", function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Attach video to lesson (admin) -> body has \\\"videoObjectKey\\\"\", function () {",
+                  "  pm.expect(pm.response.json()).to.have.property(\"videoObjectKey\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Success 200",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"_note\": \"Successful response for PATCH /lessons/{{lessonId}}/video (asserted: HTTP 200, field \\\"videoObjectKey\\\" present). See docs/openapi.json for the full schema.\"\n}"
+            },
+            {
+              "name": "400 Bad Request",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"statusCode\": 400,\n  \"message\": \"objectKey video tidak valid.\",\n  \"error\": \"Bad Request\",\n  \"path\": \"/api/lessons/{{lessonId}}/video\",\n  \"timestamp\": \"2026-01-01T00:00:00.000Z\"\n}"
+            },
+            {
+              "name": "404 Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"statusCode\": 404,\n  \"message\": \"Lesson tidak ditemukan.\",\n  \"error\": \"Not Found\",\n  \"path\": \"/api/lessons/{{lessonId}}/video\",\n  \"timestamp\": \"2026-01-01T00:00:00.000Z\"\n}"
             }
           ]
         }
@@ -6014,6 +6119,81 @@
                 }
               ],
               "body": "{\n  \"statusCode\": 403,\n  \"message\": \"You do not have permission to access this resource.\",\n  \"error\": \"Forbidden\",\n  \"path\": \"/api/admin/orders\",\n  \"timestamp\": \"2026-01-01T00:00:00.000Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Attach confirmed video to lesson (admin alias)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/lessons/{{lessonId}}/video",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "lessons",
+                "{{lessonId}}",
+                "video"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"objectKey\": \"{{lessonVideoObjectKey}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Admin alias for attaching confirmed video objectKey to lesson (B.1 addendum)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Attach confirmed video to lesson (admin alias) -> HTTP 200\", function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Attach confirmed video to lesson (admin alias) -> body has \\\"videoObjectKey\\\"\", function () {",
+                  "  pm.expect(pm.response.json()).to.have.property(\"videoObjectKey\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "Success 200",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"_note\": \"Successful response for PATCH /admin/lessons/{{lessonId}}/video. See docs/openapi.json for the full schema.\"\n}"
             }
           ]
         }
