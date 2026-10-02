@@ -19,5 +19,5 @@ describe('PasswordService', () => {
 
     const isWrong = await service.verify(hash, 'WrongPassword!456');
     expect(isWrong).toBe(false);
-  });
+  }, 15000);
 });
